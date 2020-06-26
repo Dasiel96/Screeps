@@ -1,0 +1,31 @@
+{
+  "name": "scripts",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "push": "git add . && git commit && git push",
+    "compile": "python copy.py && tsc -p ./src/tsconfig.json && C: && cd \"C:/Users/dasch/AppData/Local/Screeps/scripts/screeps.com/default\" && git add . & git commit -m \"npm push\" & git push && D: & cd \"D:/Documents/Google_Drive/ScreepScripts/scripts>\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^12.12.31",
+    "@types/screeps": "^3.0.0",
+    "screeps-profiler": "^2.0.1",
+    "source-map-support": "^0.5.16"
+  },
+  "devDependencies": {
+    "source-map": "^0.7.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dasiel96/Screep.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dasiel96/Screep/issues"
+  },
+  "homepage": "https://github.com/Dasiel96/Screep#readme",
+  "description": ""
+}
