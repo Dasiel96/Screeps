@@ -74,6 +74,7 @@ export class RoomManager {
 
     }
 
+    // test
     private createRoad(creep: Creep) {
         const x = creep.pos.x
         const y = creep.pos.y
