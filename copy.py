@@ -1,7 +1,10 @@
 import os
 import shutil
 
+num_of_lines = 0
+
 def parseImports(file_text_array, file_dict):
+    global num_of_lines
     parsed_text = ""
     for line in file_text_array:
         parsed_line = line
@@ -28,6 +31,7 @@ def parseImports(file_text_array, file_dict):
                 parsed_line = f'{import_path}"{file_name}"\n'
 
         parsed_text += parsed_line
+        num_of_lines += 1
     return parsed_text
 
 def deleteDirFiles(path):
@@ -81,3 +85,4 @@ if __name__ == "__main__":
     d = loadFiles(src)
 
     copyfiles(src, dst, d)
+    print(num_of_lines)

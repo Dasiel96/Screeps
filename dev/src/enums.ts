@@ -5,7 +5,8 @@ export enum flags{
     das96_ramparts,
     becon,
     construction,
-    new_room_spawn_pos
+    new_room_spawn_pos,
+    debug_flag
 }
 
 export enum task_names {

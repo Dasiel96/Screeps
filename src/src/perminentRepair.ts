@@ -20,6 +20,15 @@ export class PerminentStructRepair extends CreepTask {
         return is_perm_struct
     }
 
+    private updateList(){
+        
+        const structs = this.manager.getMyStructs(this.perminent_struct_type, (s: AnyStructure) => {
+            return s.hits < s.hitsMax
+        })
+
+        this.base.updateStructList(structs)
+    }
+
     protected log(){
 
     }
@@ -29,38 +38,21 @@ export class PerminentStructRepair extends CreepTask {
     }
 
     protected runLogic(creep: Creep) {
-        const filter: FilterOptions<FIND_STRUCTURES> = {
-            filter: (structs) => {
-                return this.isPerminentStruct(structs.structureType) && structs.hits < structs.hitsMax
-            }
-        }
-        const structs = creep.room.find(FIND_STRUCTURES, filter)
-        this.base.updateStructList(structs)
-
-
+        this.updateList
         this.base.run(creep)
     }
 
-    protected createLogic(master: StructureSpawn): boolean {
+    protected createLogic(): boolean {
 
 
         this.skeleton.work = 4
         this.skeleton.move = 2
         this.skeleton.carry = 4
 
-        const filter: FilterOptions<FIND_STRUCTURES> = {
-            filter: (structs) => {
-                return this.isPerminentStruct(structs.structureType) && structs.hits < structs.hitsMax
-            }
-        }
-        const structs = master.room.find(FIND_STRUCTURES, filter)
-        this.base.updateStructList(structs)
+        this.updateList()
 
-        let was_created = this.base.create(master, this.cap, this.role, this.skeleton)
-
-        if(was_created){
-            
-        }
+        let was_created = this.base.create(this.cap, this.role, this.skeleton)
+        this.num_of_creeps = this.base.getNumOfCreeps()
 
         return was_created
     }

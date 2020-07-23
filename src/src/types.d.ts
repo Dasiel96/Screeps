@@ -6,6 +6,7 @@ interface CreepMemory {
   readonly room: string;
   working: boolean;
   game_object_id: string;
+  create: boolean;
   [key: string]: any;
 }
 

@@ -2,162 +2,192 @@ import { CreepTask } from "./creepTasks"
 import { flags, task_names } from "./enums"
 import { CommonFunctions } from "./commonFuncs"
 import { Upgrader } from "./upgrader"
+import { RoomManager } from "./roomManager"
 
 export class Claimer extends CreepTask {
-    protected role: string = task_names[task_names.claimer];
 
     private ticks_to_live = 0
     private upgrader = new Upgrader()
+    private room_manager: RoomManager | null = null
 
-    private has_claimed = false
+    protected role: string = task_names[task_names.claimer];
 
-    private getNumOfClaimers() {
-        let i = 0
+    /**
+     * this class is used to claim or reserve other rooms not yet under my control
+     */
+    constructor() {
+        super();
+    }
+
+    /**
+     * @returns a number representing how many claimers currently exist across all rooms
+     * @author Daniel Schechtman
+     */
+    private getNumOfClaimers(): number {
+        let num_of_claimers = 0
         for (const creep_name in Game.creeps) {
             const creep = Game.creeps[creep_name]
             if (creep.memory.role === this.role) {
-                i++
+                num_of_claimers++
                 if (this.ticks_to_live < creep.ticksToLive!!) {
                     this.ticks_to_live = creep.ticksToLive!!
                 }
             }
         }
-        return i
+        return num_of_claimers
     }
 
-    private getSpawnConstructionSite(creep: Creep) {
-        return creep.room.find(FIND_MY_CONSTRUCTION_SITES, { filter: (s) => { return s.structureType === STRUCTURE_SPAWN } })
-    }
+    protected runLogic(creep: Creep): void {
+        if (!this.room_manager) {
+            this.room_manager = RoomManager.getInstance()
+        }
 
-    protected log(): void {
-        throw new Error("Method not implemented.");
-    }
+        const becon = flags[flags.becon]
+        const becon_flag = Game.flags[becon]
 
-    protected runLogic(creep: Creep) {
-        const becon_flag = Game.flags[flags[flags.becon]]
+        const room_to_claim = becon_flag.room
+       
 
-        let owner = becon_flag?.room?.controller?.owner
 
-        let claim_status: ScreepsReturnCode | null = null
 
-        if (this.has_claimed) {
-            const offset = 4
-            const spawn_pos = Game.flags[flags[flags.new_room_spawn_pos]]
-            let x = creep.room.controller!!.pos.x + offset
-            let y = creep.room.controller!!.pos.y + offset
+        if (room_to_claim !== undefined) {
+            const foriegn_structs = this.room_manager.getHostileStructs()
+            const foriegn_constructs = this.room_manager.getHostileConstructionSites()
 
-            const hostile_structs = creep.room.find(FIND_HOSTILE_STRUCTURES)
+            const struct_types: StructureConstant[] = [STRUCTURE_SPAWN]
 
-            for (const struct of hostile_structs) {
-                struct.destroy()
+            const spawns = this.manager.getMyStructs(struct_types)
+
+            for (const s of foriegn_structs) {
+                Game.getObjectById<AnyOwnedStructure>(s.id)?.destroy()
             }
+            
 
-            const spawns = this.getSpawnConstructionSite(creep)
+            for (const cs of foriegn_constructs) {
+                cs.remove()
+            }
+            
+            const owner = room_to_claim.controller?.owner?.username
+            CommonFunctions.filterPrint(room_to_claim.name, 2, `room owner: ${owner}, creep room: ${creep.room.name}, controller: ${room_to_claim.controller}`)
 
-            if (spawns.length === 0) {
-                let status
-                if (spawn_pos) {
-                    status = creep.room.createConstructionSite(spawn_pos.pos.x, spawn_pos.pos.y, STRUCTURE_SPAWN, `spawn ${creep.room.name}`)
+            if (!owner && creep.room.name !== room_to_claim.name) {
+                const controller = room_to_claim.controller
+                if (controller) {
+                    creep.moveTo(controller, CommonFunctions.pathOptions(this.role))
                 }
-                else {
-                    status = creep.room.createConstructionSite(x, y, STRUCTURE_SPAWN, `spawn ${creep.room.name}`)
-                }
-
-                while (status === ERR_INVALID_TARGET && !spawn_pos) {
-                    if (y !== creep.pos.y) {
-                        y--
-                    }
-                    else {
-                        x--
-                    }
-                    status = creep.room.createConstructionSite(x, y, STRUCTURE_SPAWN, `spawn ${creep.room.name}`)
-                }
-
-                if (spawn_pos) {
-                    spawn_pos.remove()
-                }
-
             }
             else {
+                const spawn_pos = flags[flags.new_room_spawn_pos]
+                const spawn_pos_flag = Game.flags[spawn_pos]
 
-                if (!CommonFunctions.getNewRoomSpawn()) {
-                    const sites = this.getSpawnConstructionSite(creep)
-                    CommonFunctions.setNewRoomSpawn(sites[0], creep.room)
+
+                const construct_flag = Game.flags[flags[flags.construction]]
+
+                const spawn_construction_sites = this.room_manager.getMyConstructionSites()
+
+                const has_control = room_to_claim.controller?.owner?.username === creep.owner?.username
+
+                if (spawn_construction_sites.length === 0 && spawns.length === 0 && has_control) {
+                    const spawn_name = `spawn ${room_to_claim.name}`
+                    room_to_claim.createConstructionSite(spawn_pos_flag.pos, STRUCTURE_SPAWN, spawn_name)
+                } else if (spawns.length === 0 && has_control) {
+
+
+                    if (!construct_flag) {
+                        room_to_claim.createFlag(24, 24, flags[flags.construction])
+                    }
+
+                    const new_spawn = CommonFunctions.getNewRoomSpawn()
+
+                    if (!new_spawn && spawn_construction_sites) {
+                        CommonFunctions.setNewRoomSpawn(spawn_construction_sites[0], room_to_claim)
+                    }
                 }
 
-                if (becon_flag) {
+                const controller = room_to_claim.controller
+
+                if (controller) {
+                    if (owner === creep.owner.username) {
+                        this.upgrader.run(creep)
+                        room_to_claim.storage?.destroy()
+                    }
+                    else if (!owner && creep.claimController(controller) === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(controller, CommonFunctions.pathOptions())
+                    }
+                    else if (!owner && creep.claimController(controller) === ERR_GCL_NOT_ENOUGH){
+                        if (creep.reserveController(controller) === ERR_NOT_IN_RANGE){
+                            creep.moveTo(controller, CommonFunctions.pathOptions())
+                        }
+                    }
+                }
+
+                
+
+                if (room_to_claim.controller && room_to_claim.controller.safeMode === 0 && room_to_claim.controller.level === 2) {
+                    room_to_claim.controller.activateSafeMode()
+                }
+
+                if (room_to_claim.controller && room_to_claim.controller.level === 2) {
                     becon_flag.remove()
-                }
-                this.upgrader.run(creep)
-                if (creep.room.controller?.level === 2 && !creep.room.controller.safeModeCooldown) {
-                    creep.room.controller.activateSafeMode()
+                    creep.suicide()
+                    
                 }
             }
-
         }
         else {
-            let reset = (owner && owner.username === creep.owner.username)
-            if (creep.room.controller) {
-                claim_status = creep.claimController(creep.room.controller)
+            const flags_in_room = this.room_manager.getFlags()
+            let becon_found = false
+
+            for (const flag of flags_in_room){
+                if (flag.name === flags[flags.becon]){
+                    becon_found = true
+                    break
+                }
             }
 
-            if (claim_status === ERR_GCL_NOT_ENOUGH) {
-                creep.reserveController(creep.room.controller!!)
+            if (becon_found) {
+                const controller = creep.room.controller
+                if (controller !== undefined) {
+                    const close_structs = creep.pos.findInRange(FIND_STRUCTURES, 1)
+
+                    for (const barrier of close_structs) {
+                        creep.dismantle(barrier)
+                    }
+
+                    let status = creep.claimController(controller)
+
+                    if (status === ERR_GCL_NOT_ENOUGH) {
+                        status = creep.reserveController(controller)
+                    }
+
+                    if (status === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(controller, CommonFunctions.pathOptions(this.role))
+                    }
+                }
             }
-            else if (claim_status === OK || reset) {
-                if (becon_flag && !reset) {
-                    this.has_claimed = true
-                    becon_flag.remove()
-                }
-                else if (becon_flag && reset) {
-                    creep.moveTo(becon_flag.room?.controller!!)
-                    this.has_claimed = creep.room.name === becon_flag.room!!.name
-                }
-                else {
-                    this.has_claimed = true
-                }
-            }
-            if (becon_flag) {
+            else {    
                 creep.moveTo(becon_flag, CommonFunctions.pathOptions())
             }
         }
-
-        if (owner && owner.username === creep.owner.username && creep.ticksToLive!! === 1) {
-            this.has_claimed = false
-            this.ticks_to_live = 0
-            if (creep.room.controller!!.level < 2) {
-                const x = creep.room.controller!!.pos.x
-                const y = creep.room.controller!!.pos.y
-                creep.room.createFlag(x, y, flags[flags.becon])
-            }
-        }
-        this.ticks_to_live = creep.ticksToLive!!
     }
 
-    protected createLogic(master: StructureSpawn): boolean {
+    protected createLogic(): boolean {
         this.skeleton.claim = 2
         this.skeleton.move = 4
         this.skeleton.work = 1
         this.skeleton.carry = 2
 
         let becon_flag = Game.flags[flags[flags.becon]]
-        const num_of_reservers = this.getNumOfClaimers()
+        const num_of_claimers = this.getNumOfClaimers()
+        this.num_of_creeps = num_of_claimers
         const claimer_about_to_die = this.ticks_to_live >= 1 && this.ticks_to_live <= 100
-        const has_enough_enegy = CommonFunctions.calcEnergyCostForBody(this.skeleton) < master.room.energyCapacityAvailable
+        const spawn_cost = CommonFunctions.calcEnergyCostForBody(this.skeleton)
+        const available_energy_cap = this.manager.getRoom()!!.energyCapacityAvailable
+        const has_enough_enegy = spawn_cost <= available_energy_cap
 
-        const shoud_spawn = becon_flag && (num_of_reservers < this.cap || claimer_about_to_die) && has_enough_enegy
+        const shoud_spawn = becon_flag && (num_of_claimers < this.cap || claimer_about_to_die) && has_enough_enegy
 
-        if (shoud_spawn) {
-
-
-            const body = CommonFunctions.createBody(this.skeleton)
-            const name = CommonFunctions.createName(this.role)
-            const role = CommonFunctions.createMemData(this.role, master.room.name)
-
-            master.spawnCreep(body, name, role)
-        }
-
-        return !shoud_spawn
+        return shoud_spawn
     }
 
     getRole(): string {
@@ -165,3 +195,5 @@ export class Claimer extends CreepTask {
     }
 
 }
+
+ /*  */

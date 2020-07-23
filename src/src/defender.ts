@@ -1,25 +1,32 @@
 import { CreepTask } from "./creepTasks"
 import { CommonFunctions } from "./commonFuncs"
-import { WhiteList } from "./whiteListed"
 import { task_names } from "./enums"
+import { RoomManager } from "./roomManager"
 
 export class Defender extends CreepTask {
-    protected role = task_names[task_names.defender]
 
     private rampart_creep: Creep | null = null
     private enemies: Creep[] | null = null
 
-    private static under_attack = false
+    protected role = task_names[task_names.defender]
 
+    /**
+     * This task is used to make creeps that will attack other creeps in the room not
+     * under my ownership
+     */
     constructor() {
         super()
-        WhiteList.add("Cciradih")
     }
 
     static get underAttack(): boolean {
-        return CommonFunctions.getHostileCreeps()!!.length > 0
+        let len = RoomManager.getInstance().getHostileCreeps().length
+        return len > 0
     }
 
+    /**
+     * @param creep_array
+     * @returns returns an Array of creeps that doesn't have 2 different
+     */
     private removeDuplicateCreeps(creep_array: Creep[]): Creep[] {
         const creep_duplicate_check = new Map<string, boolean>()
         const duplicates_removed_array: Creep[] = []
@@ -36,29 +43,46 @@ export class Defender extends CreepTask {
 
     private storeEnemies(creep: Creep) {
         this.enemies = []
-        const healers = CommonFunctions.getHostileCreeps(HEAL)
-        const range = CommonFunctions.getHostileCreeps(RANGED_ATTACK)
-        const attack = CommonFunctions.getHostileCreeps(ATTACK)
-        const the_rest = CommonFunctions.getHostileCreeps()
+        const healers = new Array<Creep>()
+        const range = new Array<Creep>()
+        const attack = new Array<Creep>()
+        const the_rest = new Array<Creep>()
 
-        if (attack) {
-            this.enemies = this.enemies.concat(attack)
+        const creeps = this.manager.getHostileCreeps()
+
+
+        for (const hc of creeps) {
+            let was_added = false
+            for (const part of hc.body) {
+                if (part.type === HEAL) {
+                    healers.push(hc)
+                    was_added = true
+                    break
+                }
+                else if (part.type === RANGED_ATTACK) {
+                    range.push(hc)
+                    was_added = true
+                    break
+                }
+                else if (part.type === ATTACK) {
+                    attack.push(hc)
+                    was_added = true
+                    break
+                }
+            }
+            if (!was_added) {
+                the_rest.push(hc)
+            }
         }
-        if (range) {
-            this.enemies = this.enemies.concat(range)
-        }
-        if (healers) {
-            this.enemies = this.enemies.concat(healers)
-        }
-        if (the_rest) {
-            this.enemies = this.enemies.concat(the_rest)
-        }
+
+
+        this.enemies = [...healers, ...range, ...attack, ...the_rest]
 
         this.enemies = this.removeDuplicateCreeps(this.enemies)
     }
 
     protected log() {
-        
+
     }
 
     getRole(): string {
@@ -87,14 +111,14 @@ export class Defender extends CreepTask {
             const attack_status = creep.attack(enemy)
             const attack_ranged_statuse = creep.rangedMassAttack()
 
-            
+
             if (this.rampart_creep.name === creep.name && attack_status !== ERR_INVALID_TARGET) {
 
                 if (!creep.memory[rampart_id]) {
                     const rampart = enemy.pos.findClosestByPath(FIND_STRUCTURES, { filter: (s) => { return s.structureType === STRUCTURE_RAMPART } })
                     creep.memory[rampart_id] = rampart?.id
                 }
-    
+
                 const rampart = Game.getObjectById<StructureRampart>(creep.memory[rampart_id])
                 if (rampart) {
                     creep.moveTo(rampart, CommonFunctions.pathOptions())
@@ -106,7 +130,7 @@ export class Defender extends CreepTask {
             else {
                 this.enemies!!.shift()
             }
-            
+
         }
         else {
             creep.suicide()
@@ -116,32 +140,25 @@ export class Defender extends CreepTask {
 
     }
 
-    protected createLogic(master: StructureSpawn): boolean {
-        const num_of_enemies = CommonFunctions.getHostileCreeps()?.length
-        const num_of_defenders = CommonFunctions.getMyCreeps(this.role, master).length
+    protected createLogic(): boolean {
+        const num_of_enemies = this.manager.getHostileCreeps().length
+        const num_of_defenders = this.manager.getMyCreeps(this.role).length
+        this.num_of_creeps = num_of_defenders
+        this.cap = num_of_enemies
+
 
         let should_spawn = false
 
-        if (num_of_enemies) {
-            should_spawn = num_of_defenders < num_of_enemies
-        }
+
+        should_spawn = num_of_defenders < num_of_enemies
+
 
         this.skeleton.move = 5
         this.skeleton.tough = 10
         this.skeleton.attack = 4
         this.skeleton.ranged_attack = 4
 
-        const body = CommonFunctions.createBody(this.skeleton)
-        const name = CommonFunctions.createName(this.role)
-        const role = CommonFunctions.createMemData(this.role, master.room.name)
-
-        Defender.under_attack = Boolean(num_of_enemies)
-
-        if (should_spawn) {
-            master.spawnCreep(body, name, role)
-        }
-
-        return !should_spawn
+        return should_spawn
     }
 
 }

@@ -17,7 +17,7 @@ export class RepairTarget {
 
     repair() {
         const struct = Game.getObjectById<StructureTower>(this.struct_id)
-        let target = Game.getObjectById<Structure>(this.target_id)
+        let target = Game.getObjectById<AnyStructure>(this.target_id)
 
         let can_repair = Boolean(struct) && Boolean(target)
 
@@ -34,7 +34,7 @@ export class RepairTarget {
 
     hasTarget() {
         let ret_val = false
-        let cur_target = Game.getObjectById<Structure>(this.target_id)
+        let cur_target = Game.getObjectById<AnyStructure>(this.target_id)
         if(cur_target){
             ret_val = Boolean(cur_target) && cur_target.hits < cur_target.hitsMax
         }

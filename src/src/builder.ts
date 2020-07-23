@@ -1,39 +1,39 @@
 import { CommonFunctions } from "./commonFuncs"
 import { CreepTask } from "./creepTasks"
 import { task_names } from "./enums"
+import { CreepActions } from "./creepAction"
+import { FIFOStack } from "./stack"
 
 
-// this task tells creeps to go around the colony and build structures
+
 export class Builder extends CreepTask {
+
+    // used to determine if a construction site is currently being worked on
+    private static sites_under_construction = new Map<string, string>()
+
+    // used to assign construction sites to specific creep
+    private construction_site_stack = new FIFOStack<ConstructionSite>()
 
     protected role: string = task_names[task_names.builder]
 
-    // associates construction site with the builder so that the builder knows
-    // which site to work on
-    private static sites_under_construction = new Map<string, string>()
-
-    private reassignToNewSpawn() {
-        let newest_creep: Creep | null = null
-        let tick_to_live = 0
-
-        for (const creep_name in Game.creeps) {
-            const cur_creep = Game.creeps[creep_name]
-            if (cur_creep.memory.role === this.role && tick_to_live < cur_creep.ticksToLive!!) {
-                tick_to_live = cur_creep.ticksToLive!!
-                newest_creep = cur_creep
-            }
-        }
-
-        if (newest_creep) {
-            newest_creep.memory.game_object_id = CommonFunctions.getNewRoomSpawn()!!.id
-        }
+    /**
+    * This task builds all structures for the colony
+    */
+    constructor() {
+        super()
     }
 
-    // ensures that if a structure isn't complete upon a creep's death
-    // the task is alerted to assign another creep to build said structure
-    private removeSitesFromMemory() {
+    /**
+     * removes construction sites from sites_under_construction so that if one builder
+     * didn't complete a job, another builder can
+     * @returns void
+     * @author Daniel Schechtman
+     */
+    private removeSitesFromMemory(): void {
         const sites_under_construction_copy = new Map<string, string>()
 
+        // makes a copy to ensure data isn't being removed from the original while
+        // it's still being checked for items to delete
         Builder.sites_under_construction.forEach((val: string, key: string) => {
             sites_under_construction_copy.set(key, val)
         })
@@ -45,80 +45,80 @@ export class Builder extends CreepTask {
         })
     }
 
-    // associates specific creep with a construction site to be worked
-    // on while the construction isn't complete
-    private assignConstructSiteToCreep(creep: Creep) {
-        let construction_sites = creep.room.find(FIND_MY_CONSTRUCTION_SITES)
+    /**
+     * stores a construction site id within a creep's memory and in sites_under_construction if there are any 
+     * valid construction sites within a room, otherwise it will store an empty string in the creep's memory.
+     * @param creep the creep that will have the construction site id stored in memory
+     * @param pop_stack a flag to determine if the current construction site being looked at 
+     * on the stack should be popped (false by defualt) 
+     * @returns void
+     * @author Daniel Schechtman
+     */
+    private giveBuilderASite(creep: Creep, pop_stack: boolean = false): void {
 
-        for (let site of construction_sites) {
-            if (!Builder.sites_under_construction.has(site.id)) {
-                creep.memory.game_object_id = site.id
-                Builder.sites_under_construction.set(site.id, creep.name)
-                break
-            }
-        }
-    }
-
-    // DEPRICATED METHOD THAT WILL BE REMOVED
-    protected log() {
-
-    }
-
-    getRole(): string {
-        return this.role
-    }
-
-    // logic to be performed when a task is run
-    protected runLogic(creep: Creep) {
-        const spawn_site_in_new_room = CommonFunctions.getNewRoomSpawn()
-
-        // will assign a new spaw to be built in another room if a new one exists
-        if (spawn_site_in_new_room) {
-            const new_spawn_id = spawn_site_in_new_room.id
-            if (!Builder.sites_under_construction.has(new_spawn_id)) {
-                creep.memory.game_object_id = new_spawn_id
-                Builder.sites_under_construction.set(new_spawn_id, creep.name)
+        if (this.construction_site_stack.size() === 0) {
+            let construction_sites = this.manager.getMyConstructionSites()
+            for (const site of construction_sites) {
+                this.construction_site_stack.push(site)
             }
         }
 
-        const state = CommonFunctions.changeWorkingState(creep)
-        const source_ref = "source"
+        const new_spawn = CommonFunctions.getNewRoomSpawn()
 
-        if (!creep.memory.game_object_id) {
-            this.assignConstructSiteToCreep(creep)
+        if (pop_stack) {
+            this.construction_site_stack.pop()
+        }
+
+        let site = this.construction_site_stack.peek()
+
+
+        if (new_spawn !== null && !Builder.sites_under_construction.has(new_spawn.id)) {
+            creep.memory.game_object_id = new_spawn.id
+            Builder.sites_under_construction.set(new_spawn.id, creep.name)
+        }
+        else if (site !== null) {
+            creep.memory.game_object_id = site.id
+            Builder.sites_under_construction.set(site.id, creep.name)
+        }
+        else if (site === null) {
+            creep.memory.game_object_id = ""
+        }
+    }
+
+
+    protected runLogic(creep: Creep): void {
+
+        CommonFunctions.changeWorkingState(creep)
+
+        if (creep.memory.game_object_id.length === 0) {
+            this.giveBuilderASite(creep)
         }
         else if (!Builder.sites_under_construction.has(creep.memory.game_object_id)) {
             Builder.sites_under_construction.set(creep.memory.game_object_id, creep.name)
         }
 
         if (!creep.memory.working) {
-            if(!creep.memory[source_ref]){
-                creep.memory[source_ref] = CommonFunctions.findClosestSource(creep)
-            }
-            
-            const sources = creep.pos.findClosestByPath(FIND_SOURCES)!!
-            const build_status = creep.harvest(sources)
-            if (build_status === ERR_NOT_IN_RANGE) {
-                creep.moveTo(sources, CommonFunctions.pathOptions())
-            }
+            CreepActions.harvest(creep)
         }
         else {
-            const construction_site = Game.getObjectById(creep.memory.game_object_id) as ConstructionSite
-            let build_status = creep.build(construction_site)
+            const construction_site = Game.getObjectById<ConstructionSite>(creep.memory.game_object_id)
+            let build_status: ScreepsReturnCode | null = null
+
+            if (construction_site) {
+                build_status = creep.build(construction_site)
+            }
 
             switch (build_status) {
                 case ERR_NOT_IN_RANGE: {
-                    creep.moveTo(construction_site, CommonFunctions.pathOptions())
+                    creep.moveTo(construction_site!!, CommonFunctions.pathOptions())
                     break
                 }
-                case OK:{
+                case OK: {
                     break
                 }
                 case ERR_INVALID_TARGET: {
-                    creep.memory.game_object_id = ""
-                    this.assignConstructSiteToCreep(creep)
-                    
-                    if(creep.memory.game_object_id.length === 0){
+                    this.giveBuilderASite(creep, true)
+                    if (creep.memory.game_object_id.length === 0) {
                         creep.suicide()
                     }
                     break
@@ -130,38 +130,38 @@ export class Builder extends CreepTask {
         }
     }
 
-    protected createLogic(master: StructureSpawn): boolean {
+    protected createLogic(): boolean {
         this.removeSitesFromMemory()
-        let num_of_construct_sites = master.room.find(FIND_MY_CONSTRUCTION_SITES)
-        const num_of_builders = CommonFunctions.getMyCreeps(this.role, master).length
+
+        let num_of_construct_sites = this.manager.getMyConstructionSites()
+        const num_of_builders = this.manager.getMyCreeps(this.role).length
+        this.num_of_creeps = num_of_builders
+
         let cap = this.cap
 
-        if (CommonFunctions.getNewRoomSpawn()) {
-            const new_spawn_site = CommonFunctions.getNewRoomSpawn()!!
-            console.log("has room")
-            if (!Builder.sites_under_construction.has(new_spawn_site.id)) {
-                num_of_construct_sites = [CommonFunctions.getNewRoomSpawn()!!, ...num_of_construct_sites]
-                console.log("site added")
-                cap = this.cap + 1
+        const new_spawn_site = CommonFunctions.getNewRoomSpawn()
+        if (new_spawn_site !== null && !Builder.sites_under_construction.has(new_spawn_site.id)) {
+            num_of_construct_sites = [new_spawn_site, ...num_of_construct_sites]
+            cap = this.cap + 1
+        }
+
+        let should_spawn = num_of_construct_sites.length > 0 && num_of_builders < cap
+
+        const part_types = [WORK, CARRY, TOUGH, HEAL, ATTACK, RANGED_ATTACK, CLAIM]
+
+        this.skeleton.work = 4
+        this.skeleton.carry = 4
+
+        if (this.skeleton.move === 0) {
+            for (const part of part_types) {
+                this.skeleton.move += this.skeleton[part]
             }
         }
 
-        let spawn = num_of_construct_sites.length > 0 && num_of_builders < cap
+        return should_spawn
+    }
 
-        if (spawn) {
-            this.skeleton.work = 4
-            this.skeleton.carry = 4
-            this.skeleton.move = 5
-
-
-            let body = CommonFunctions.createBody(this.skeleton)
-            const name = CommonFunctions.createName(this.role)
-            const role = CommonFunctions.createMemData(this.role, master.room.name)
-
-            master.spawnCreep(body, name, role)
-        }
-
-
-        return !spawn
+    getRole(): string {
+        return this.role
     }
 }

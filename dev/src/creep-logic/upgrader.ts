@@ -2,6 +2,7 @@
 import { CommonFunctions } from "../commonFuncs"
 import { CreepTask } from "./creepTasks"
 import { task_names } from "../enums"
+import { CreepActions } from "./creepAction"
 export class Upgrader extends CreepTask {
     protected role = task_names[task_names.upgrader]
 
@@ -16,54 +17,42 @@ export class Upgrader extends CreepTask {
     protected runLogic(creep: Creep) {
 
         CommonFunctions.changeWorkingState(creep)
+        const source_key = "source"
+        const controller_key = "controller"
 
 
         if (!creep.memory.working) {
-            let source: Source | StructureStorage = CommonFunctions.findClosestSource(creep)
+            if (!creep.memory[source_key]){
+                creep.memory[source_key] = creep.pos.findClosestByPath(FIND_SOURCES)!!.id
+            }
 
-            const store = creep.room.find(FIND_MY_STRUCTURES, {
-                filter: (s) => {
-                    return s.structureType === STRUCTURE_STORAGE && s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-                }
-            })
-            let status: ScreepsReturnCode
-
-            if(store.length > 0){
-                source = store[0] as StructureStorage
-                status = creep.withdraw(source, RESOURCE_ENERGY)
-            }
-            else{
-                status = creep.harvest(source)
-            }
-            if (status === ERR_NOT_IN_RANGE) {
-                creep.moveTo(source, CommonFunctions.pathOptions())
-            }
+            CreepActions.harvest(creep)
         }
         else {
-            const controller = creep.room.controller
-            if (controller != undefined && creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
+            if (!creep.memory[controller_key]){
+                creep.memory[controller_key] = creep.room.controller?.id
+            }
+
+            const controller = Game.getObjectById<StructureController>(creep.memory[controller_key])
+            const upgrade_status = creep.upgradeController(controller!!)
+            const sign_status = creep.signController(controller!!, "")
+            const sign = controller?.sign
+            
+            if (controller && (upgrade_status === ERR_NOT_IN_RANGE || (sign && sign_status === ERR_NOT_IN_RANGE))) {
                 creep.moveTo(controller, CommonFunctions.pathOptions())
             }
         }
     }
 
-    protected createLogic(master: StructureSpawn): boolean {
-        const existing_upgraders = CommonFunctions.getMyCreeps(this.role, master).length
+    protected createLogic(): boolean {
+        const existing_upgraders = this.manager.getMyCreeps(this.role).length
         const should_spawn = existing_upgraders < this.cap
+        this.skeleton.work = 3
+        this.skeleton.carry = 4
+        this.skeleton.move = 7
 
-        if (should_spawn) {
-
-            this.skeleton.work = 3
-            this.skeleton.carry = 4
-            this.skeleton.move = 7
-
-            const body = CommonFunctions.createBody(this.skeleton)
-            const name = CommonFunctions.createName(this.role)
-            const role = CommonFunctions.createMemData(this.role, master.room.name)
-
-            master.spawnCreep(body, name, role)
-        }
+        this.num_of_creeps = existing_upgraders
         
-        return !should_spawn
+        return should_spawn
     }
 }

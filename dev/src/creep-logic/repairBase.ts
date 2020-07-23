@@ -1,5 +1,7 @@
 import { CommonFunctions} from "../commonFuncs";
 import { Body } from "../interfaces";
+import { RoomManager } from "../managers/roomManager";
+import { CreepActions } from "./creepAction";
 
 export class RepairBase {
     // associates a struct id with a creep name
@@ -8,6 +10,8 @@ export class RepairBase {
     private static structs_under_repair = new Map<string, string>()
 
     private sorted_structs_from_weakest_to_strongest: AnyStructure[] | null = null
+
+    private num_of_creeps = 0
 
     private removeStructFromTracking() {
 
@@ -40,7 +44,13 @@ export class RepairBase {
     private getAllHarmedStructs(creep: Creep) {
         let structs = this.sorted_structs_from_weakest_to_strongest?.sort((a, b) => {return this.compareFunc(a, b)})
         if (!structs) {
-            structs = creep.room.find(FIND_STRUCTURES).sort((a, b) => { return this.compareFunc(a, b) })
+            const all_structs = RoomManager.getInstance().getMyStructs()
+            structs = new Array<AnyStructure>()
+
+            for (const s of all_structs){
+                structs.push(Game.getObjectById<AnyStructure>(s.id)!!)
+            }
+
             console.log(`repair_base -> getAllDamagedStructsFromWeakestToStrongest: err perfered struct is null, getting all structures`)
         }
         return structs
@@ -80,15 +90,17 @@ export class RepairBase {
             case -1: {
                 if (!creep.memory[source_ref]) {
                     let source: Source | StructureStorage = CommonFunctions.findClosestSource(creep)
-                    const spawn = creep.room.find(FIND_MY_STRUCTURES, {filter: (s) => {return s.structureType === STRUCTURE_SPAWN}})
-                    if(spawn.length > 0){
-                        const closest_source_to_spawn = spawn[0].pos.findClosestByPath(FIND_SOURCES)
+                    const struct_types: StructureConstant[] = [STRUCTURE_SPAWN]
+                    const spawns = RoomManager.getInstance().getMyStructs(struct_types)
+                    if(spawns.length > 0){
+                        const spawn = Game.getObjectById<StructureSpawn>(spawns[0].id)!!
+                        const closest_source_to_spawn = spawn.pos.findClosestByPath(FIND_SOURCES)
                         if(closest_source_to_spawn && closest_source_to_spawn.id === source.id){
-                            const storage = creep.room.find(FIND_MY_STRUCTURES, {
-                                filter: (s) => {
-                                    return s.structureType === STRUCTURE_STORAGE && s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-                                }
+                            const struct_types: StructureConstant[] = [STRUCTURE_STORAGE]
+                            const storage = RoomManager.getInstance().getMyStructs(struct_types, (s: AnyStructure) => {
+                                return (s as StructureStorage).store.getUsedCapacity(RESOURCE_ENERGY) > 0
                             })
+
 
                             if(storage.length > 0){
                                 source = storage[0] as StructureStorage
@@ -113,19 +125,7 @@ export class RepairBase {
         }
 
         if (!creep.memory.working) {
-            const source = Game.getObjectById<Source | StructureStorage>(creep.memory[source_ref])
-            let status
-
-            if(source instanceof StructureStorage){
-                status = creep.withdraw(source, RESOURCE_ENERGY)
-            }
-            else if(source instanceof Source){
-                status = creep.harvest(source)
-            }
-
-            if(source && status === ERR_NOT_IN_RANGE){
-                creep.moveTo(source, CommonFunctions.pathOptions())
-            }
+            CreepActions.harvest(creep)
         }
         else {
             let struct = Game.getObjectById<Structure>(creep.memory.game_object_id)
@@ -154,18 +154,17 @@ export class RepairBase {
         }
     }
 
-    create(master: StructureSpawn, cap: number, creep_role: string, skeleton: Body): boolean {
-        const repairmen = CommonFunctions.getMyCreeps(creep_role, master).length
-        const should_spawn = repairmen < cap && this.sorted_structs_from_weakest_to_strongest?.length
+    create(cap: number, creep_role: string, skeleton: Body): boolean {
+        const repairmen = RoomManager.getInstance().getMyCreeps(creep_role).length
+        const num_of_constructions = this.sorted_structs_from_weakest_to_strongest?.length
+        const should_spawn = repairmen < cap && num_of_constructions !== undefined && num_of_constructions > 0
+        this.num_of_creeps = repairmen
 
-        if (should_spawn) {
-            const body = CommonFunctions.createBody(skeleton)
-            const name = CommonFunctions.createName(creep_role)
-            const role = CommonFunctions.createMemData(creep_role, master.room.name)
+        
+        return should_spawn
+    }
 
-            master.spawnCreep(body, name, role)
-        }
-
-        return !should_spawn
+    getNumOfCreeps(){
+        return this.num_of_creeps
     }
 }
