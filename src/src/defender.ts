@@ -2,11 +2,16 @@ import { CreepTask } from "./creepTasks"
 import { CommonFunctions } from "./commonFuncs"
 import { task_names } from "./enums"
 import { RoomManager } from "./roomManager"
+import { threadId } from "worker_threads"
+import { CreepData } from "./interfaces"
 
 export class Defender extends CreepTask {
 
-    private rampart_creep: Creep | null = null
-    private enemies: Creep[] | null = null
+    // stores a list of id strings for each hostile creep in the room
+    private enemies = new Array<string>()
+
+    // used to quickly access which creep to target from the array enemies
+    private enemy_index = 0
 
     protected role = task_names[task_names.defender]
 
@@ -18,129 +23,90 @@ export class Defender extends CreepTask {
         super()
     }
 
-    static get underAttack(): boolean {
-        let len = RoomManager.getInstance().getHostileCreeps().length
-        return len > 0
-    }
-
     /**
-     * @param creep_array
-     * @returns returns an Array of creeps that doesn't have 2 different
+     * Returns an array containing a list containing creeps id strings
+     *
+     * @param   {Creep[]}  creep_array  an array of creeps that can contain multiple entries consisting of the same creep
+     *
+     * @return  {Creep[]}               an array in which each string represents a creep id and no two elements are identical
+     * @author Daniel Schechtman
      */
     private removeDuplicateCreeps(creep_array: Creep[]): Creep[] {
         const creep_duplicate_check = new Map<string, boolean>()
         const duplicates_removed_array: Creep[] = []
 
         for (const creep of creep_array) {
-            if (!creep_duplicate_check.has(creep.name)) {
+            if (!creep_duplicate_check.has(creep.id)) {
                 duplicates_removed_array.push(creep)
-                creep_duplicate_check.set(creep.name, true)
+                creep_duplicate_check.set(creep.id, true)
             }
         }
 
         return duplicates_removed_array
     }
 
-    private storeEnemies(creep: Creep) {
-        this.enemies = []
-        const healers = new Array<Creep>()
-        const range = new Array<Creep>()
-        const attack = new Array<Creep>()
-        const the_rest = new Array<Creep>()
+    /**
+     * returns an array of all enemy ids in the room
+     *
+     * @return  {Array<string>}
+     * @author Daniel Schechtman
+     */
+    private getEnemyIds(): Array<string> {
+        let all_enemy_creeps: Array<Creep> 
+        const all_enemy_creeps_id = new Array<string>()
+    
+        const healers = this.manager.getHostileCreeps(HEAL)
+        const range_attackers = this.manager.getHostileCreeps(RANGED_ATTACK)
+        const attackers = this.manager.getHostileCreeps(ATTACK)
+        const misc_creeps = this.manager.getHostileCreeps(MOVE)
 
-        const creeps = this.manager.getHostileCreeps()
+        all_enemy_creeps = [...healers, ...range_attackers, ...attackers, ...misc_creeps]
 
-
-        for (const hc of creeps) {
-            let was_added = false
-            for (const part of hc.body) {
-                if (part.type === HEAL) {
-                    healers.push(hc)
-                    was_added = true
-                    break
-                }
-                else if (part.type === RANGED_ATTACK) {
-                    range.push(hc)
-                    was_added = true
-                    break
-                }
-                else if (part.type === ATTACK) {
-                    attack.push(hc)
-                    was_added = true
-                    break
-                }
-            }
-            if (!was_added) {
-                the_rest.push(hc)
-            }
+        for (const creep of this.removeDuplicateCreeps(all_enemy_creeps)) {
+            all_enemy_creeps_id.push(creep.id)
         }
 
-
-        this.enemies = [...healers, ...range, ...attack, ...the_rest]
-
-        this.enemies = this.removeDuplicateCreeps(this.enemies)
+        return all_enemy_creeps_id
     }
 
-    protected log() {
+    protected startLogic(creep: Creep) {
 
-    }
-
-    getRole(): string {
-        return this.role
     }
 
     protected runLogic(creep: Creep) {
 
-        const rampart_id = "rampart"
-
-        if (this.enemies === null || this.enemies.length === 0) {
-            this.storeEnemies(creep)
+        // saves on computation by storing results on what enemies are in
+        // the room vs checking what enemies are in the room every tick
+        if (this.enemies.length === 0) {
+            this.enemies = this.getEnemyIds()
         }
 
-        if (this.rampart_creep === null) {
-            this.rampart_creep = creep
-        }
-        else if (this.rampart_creep.ticksToLive && creep.ticksToLive) {
-            if (this.rampart_creep.ticksToLive < creep.ticksToLive) {
-                this.rampart_creep = creep
-            }
-        }
+        if (this.enemy_index < this.enemies.length) {
+            const enemy = Game.getObjectById<Creep>(this.enemies[this.enemy_index])
 
-        if (this.enemies!!.length > 0) {
-            const enemy = this.enemies!![0]
-            const attack_status = creep.attack(enemy)
-            const attack_ranged_statuse = creep.rangedMassAttack()
+            if (enemy !== null) {
+                const attack_status = creep.attack(enemy)
+                const attack_ranged_statuse = creep.rangedMassAttack()
 
 
-            if (this.rampart_creep.name === creep.name && attack_status !== ERR_INVALID_TARGET) {
-
-                if (!creep.memory[rampart_id]) {
-                    const rampart = enemy.pos.findClosestByPath(FIND_STRUCTURES, { filter: (s) => { return s.structureType === STRUCTURE_RAMPART } })
-                    creep.memory[rampart_id] = rampart?.id
+                if (attack_status === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(enemy, CommonFunctions.pathOptions())
                 }
-
-                const rampart = Game.getObjectById<StructureRampart>(creep.memory[rampart_id])
-                if (rampart) {
-                    creep.moveTo(rampart, CommonFunctions.pathOptions())
-                }
-            }
-            else if (attack_status === ERR_NOT_IN_RANGE) {
-                creep.moveTo(enemy, CommonFunctions.pathOptions())
             }
             else {
-                this.enemies!!.shift()
+                this.enemy_index++
             }
 
         }
         else {
             creep.suicide()
-            this.enemies = null
-            this.rampart_creep = null
+            this.enemies = new Array()
+            this.enemy_index = 0
         }
 
     }
 
-    protected createLogic(): boolean {
+    protected spawnCheck(): boolean {
         const num_of_enemies = this.manager.getHostileCreeps().length
         const num_of_defenders = this.manager.getMyCreeps(this.role).length
         this.num_of_creeps = num_of_defenders
@@ -159,6 +125,14 @@ export class Defender extends CreepTask {
         this.skeleton.ranged_attack = 4
 
         return should_spawn
+    }
+
+    protected destroyLogic(creep: CreepData) {
+        
+    }
+
+    getRole(): string {
+        return this.role
     }
 
 }

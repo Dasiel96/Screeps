@@ -1,244 +1,166 @@
 import { CommonFunctions } from "./commonFuncs"
 import { CreepTask } from "./creepTasks"
-import { Defender } from "./defender"
-import { flags, task_names } from "./enums"
-import { stat } from "fs"
+import { flag_names, task_names } from "./enums"
+import { CreepActions } from "./creepAction"
+import { CreepData } from "./interfaces"
+import { TwoDemMap } from "./map"
 
-interface LinkSupplier {
-    id: string,
-    supplied: boolean,
-}
-
-// this task collects energy and brings it to the spawn so creeps can be
-// made to perform tasks for the colony
 export class Harvester extends CreepTask {
-    private link_creep = new Map<string, LinkSupplier>()
 
-    protected role = task_names[task_names.harvester]
-    protected cap = 2
-
-    private static harvest_role = task_names[task_names.harvester]
-
-    constructor() {
-        super()
-        Harvester.harvest_role = this.role
-
-    }
-
-    private readonly store_types: StructureConstant[] = [
+    private readonly production_structs: Array<StructureConstant> = [
         STRUCTURE_SPAWN,
-        STRUCTURE_EXTENSION,
+        STRUCTURE_EXTENSION
+    ]
+
+    private readonly store_structs: Array<StructureConstant> = [
+        STRUCTURE_LINK,
         STRUCTURE_CONTAINER,
         STRUCTURE_STORAGE
     ]
 
-    private getStore(struct: AnyStructure) {
-        let ret_store = null
-        const store_types = [
-            STRUCTURE_SPAWN,
-            STRUCTURE_STORAGE,
-            STRUCTURE_CONTAINER,
-            STRUCTURE_LINK,
-            STRUCTURE_EXTENSION,
-        ]
+    private readonly supplyManager = new TwoDemMap<string, Array<StructureConstant>>()
 
-        for (const store of store_types) {
-            if (struct.structureType === store) {
-                ret_store = struct.store
-                break
+    protected role = task_names[task_names.harvester]
+    protected cap = 2
+
+
+    /**
+     * This task collects energy from a source and brings it to energy storage structures
+     * (structures such as Links, Storage, Spawns, Extensions, Containers, etc)
+     * @author Daniel Schechtman
+     */
+    constructor() {
+        super()
+    }
+
+    /**
+     * returns the link closest to the flag supply_link <room name>, null if there
+     * are no links in the room.
+     *
+     * @param   {[string]}  creep_room_name  used to find the supply flag in the room
+     *
+     * @author Daniel Schechtman
+     */
+    private getSupplyLink(creep_room_name: string): StructureLink | null {
+        const supply_flag = Game.flags[`${flag_names[flag_names.supply_link]} ${creep_room_name}`]
+        let link: StructureLink | null = null
+
+        if (supply_flag) {
+            const supply_link = supply_flag.pos.findClosestByPath(FIND_MY_STRUCTURES, {
+                filter: (s) => {
+                    return s.structureType === STRUCTURE_LINK
+                }
+            })
+
+            if (supply_link instanceof StructureLink) {
+                link = supply_link
             }
         }
-        return ret_store
+
+        return link
     }
 
+    /**
+     * Will remove all links, except the link closest to the supply_link flag, and return a list with
+     * all structures save for those links
+     *
+     * @param   {Array<AnyStructure>}  structures    list of structures that need to be filtered for links
+     * @param   {string}  creep_room_name         used to find the supply link
+     *
+     * @return  {Array<AnyStructure>}                an array with all the structures originally in the passed in array
+     * save for only having a link closest to supply_flag if any link was in the list
+     * @author Daniel Schechtman
+     */
+    private removeRecieveLinks(structures: Array<AnyStructure>, creep_room_name: string): Array<AnyStructure> {
+        const list_with_supply_link = new Array<AnyStructure>()
+        const supply_link = this.getSupplyLink(creep_room_name)
 
-    protected log() {
+        for (const struct of structures) {
+            if (struct.structureType !== STRUCTURE_LINK || struct.id === supply_link?.id) {
+                list_with_supply_link.push(struct)
+            }
+        }
 
+        return list_with_supply_link
     }
 
-    getRole() {
-        return this.role
+    protected startLogic(creep: Creep) {
+
+        const supply_size = this.supplyManager.size(creep.room.name)
+
+        if (supply_size === 0 || supply_size > 1) {
+            this.supplyManager.set(creep.room.name, creep.id, this.production_structs)
+        }
+        else if (supply_size === 1) {
+            this.supplyManager.set(creep.room.name, creep.id, this.store_structs)
+        }
+
     }
 
     protected runLogic(creep: Creep) {
+        CommonFunctions.changeWorkingState(creep)
 
-        // makes sure it only gathers more energy when it stores all the
-        // energy it has gathered
-        const should_get_energy = CommonFunctions.changeWorkingState(creep)
-        const num_of_harvesters = this.manager.getMyCreeps(task_names[task_names.harvester]).length
+        const supply_size = this.supplyManager.size(creep.room.name)
 
-        const source = "s"
-        const link = "l"
+        if (supply_size === 1) {
+            this.supplyManager.set(creep.room.name, creep.id, this.production_structs)
+        }
 
-        let room_id = creep.room.name
-
-        if (!this.link_creep.has(creep.room.name)) {
-            const struct_types: StructureConstant[] = [STRUCTURE_LINK]
-            const nearest_link = this.manager.getMyStructs(struct_types)
-
-            if (nearest_link.length > 0) {
-                creep.memory[link] = nearest_link[0].id
-            }
-
-            const supplier: LinkSupplier = {
-                id: creep.id,
-                supplied: false
-            }
-            this.link_creep.set(creep.room.name, supplier)
-
+        if (!creep.memory.working) {
+            CreepActions.harvest(creep)
         }
         else {
-            const supplier_creep_id = this.link_creep.get(creep.room.name)!!.id
-            const supplier_creep = Game.getObjectById(supplier_creep_id)
-            if (!supplier_creep) {
-                this.link_creep.delete(creep.room.name)
-            }
-        }
-
-
-        const pathOpts = CommonFunctions.pathOptions()
-        if (!creep.memory.working) {
-
-
-
-            if (!creep.memory[source]) {
-                creep.memory[source] = creep.pos.findClosestByPath(FIND_SOURCES)!!.id
-            }
-
-            // gathering energy
-
-
-
-            if (this.link_creep.get(room_id)?.id === creep.id) {
-                const energy = Game.getObjectById<Source>(creep.memory[source])!!
-                let status = creep.harvest(energy)
-                if (status === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(energy, pathOpts)
-                } else if (creep.store.energy > 10 && creep.room.storage && num_of_harvesters > 1) {
-                    creep.memory.working = true
+            const struct_types = this.supplyManager.get(creep.room.name, creep.id)
+            let num = 0
+            const callback = (s: AnyStructure, debug?: any) => {
+                let has_room_in_storage = false
+                try {
+                    const store_struct = s as AnyStoreStructure
+                    has_room_in_storage = store_struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0
                 }
+                catch (e_) {
+                    const error = e_ as Error
 
-                this.link_creep.get(room_id)!!.supplied = false
+                    console.log(error.stack)
+                    console.log(error.message)
+
+                    has_room_in_storage = false
+                }
+                num++
+                return has_room_in_storage
+            }
+
+            let structs = this.manager.getMyStructs(struct_types!!, callback)
+
+            if (struct_types === this.store_structs) {
+                structs = this.removeRecieveLinks(structs, creep.room.name)
+            }
+
+            if (structs.length === 0) {
+                structs = this.manager.getMyStructs(this.production_structs, callback)
+            }
+
+            if (structs.length > 0) {
+                const transfer_status = creep.transfer(structs[0] as AnyStoreStructure, RESOURCE_ENERGY)
+
+                if (transfer_status === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(structs[0], CommonFunctions.pathOptions())
+                }
             }
             else {
-                const energy = creep.room.storage
-                if (energy) {
-                    const status = creep.withdraw(energy as StructureStorage, RESOURCE_ENERGY)
-                    if (status === ERR_NOT_IN_RANGE) {
-                        creep.moveTo(energy, CommonFunctions.pathOptions())
-                    }
-                }
-                else {
-                    const source = creep.pos.findClosestByPath(FIND_SOURCES)!!
-                    const status = creep.harvest(source)
-
-                    if (status === ERR_NOT_IN_RANGE) {
-                        creep.moveTo(source, CommonFunctions.pathOptions())
-                    }
-                }
-            }
-        }
-
-        if (creep.memory.working) {
-
-            const spawn_energy_struct_id = "energy_id"
-            //storing energy
-            const spawn_energy: StructureConstant[] = [STRUCTURE_SPAWN, STRUCTURE_EXTENSION]
-            const energy_store_units = this.manager.getMyStructs(spawn_energy, (s: AnyStructure) => {
-                return (s as AnyStoreStructure).store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            })
-
-            const becon_flag = Game.flags[flags[flags.becon]]
-
-            const store_energy: StructureConstant[] = [STRUCTURE_STORAGE]
-            const battery = this.manager.getMyStructs(store_energy)
-
-            const storage_unit = [...energy_store_units, ...battery]
-
-            let store_target: AnyStructure | null = null
-
-            if (storage_unit.length > 0) {
-                store_target = storage_unit[0]
+                const wait_flag = Game.flags[CommonFunctions.getFlagName(flag_names.harvester_wait, creep.room)]
+                creep.moveTo(wait_flag, CommonFunctions.pathOptions())
             }
 
-
-            const is_link_creep = this.link_creep.get(room_id)?.id === creep.id
-            const are_enough_harvesters = num_of_harvesters > 1
-            const can_supply = this.link_creep.get(room_id)?.supplied === false || !becon_flag
-
-            if (is_link_creep && are_enough_harvesters) {
-                const link_target = Game.getObjectById<StructureLink>(creep.memory[link])
-                const change_target = link_target && link_target.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                if (change_target) {
-                    store_target = link_target
-                }
-                else if (!Defender.underAttack) {
-                    let battery_store: StructureStorage = battery[0] as StructureStorage
-                    let storage = creep.room.storage
-
-                    if (storage && battery_store.store.energy < battery_store.store.getCapacity() / 2) {
-                        store_target = battery_store
-                    }
-                }
-            }
-
-
-            if (store_target && this.getStore(store_target)!!.getFreeCapacity(RESOURCE_ENERGY) > 0) {
-                const link_creep = this.link_creep.get(room_id)
-
-                let status
-                if (creep.room.storage && num_of_harvesters > 1) {
-
-                    if (store_target instanceof StructureStorage && link_creep?.id !== creep.id) {
-                        const flag = CommonFunctions.getFlagName(flags.harvester_wait, creep.room)
-                        creep.moveTo(Game.flags[flag], pathOpts)
-                    }
-
-                    else if (link_creep?.id === creep.id) {
-                        status = creep.transfer(store_target, RESOURCE_ENERGY, 10)
-                    }
-                    else {
-                        status = creep.transfer(store_target, RESOURCE_ENERGY)
-                    }
-
-                    if (status === ERR_NOT_IN_RANGE) {
-                        creep.moveTo(store_target, CommonFunctions.pathOptions())
-                    }
-                    else if (link_creep?.id === creep.id && (status === ERR_FULL || status === ERR_NOT_ENOUGH_ENERGY)) {
-                        creep.transfer(store_target, RESOURCE_ENERGY)
-                    }
-                    else if (link_creep?.id === creep.id && status === OK) {
-                        this.link_creep.get(creep.room.name)!!.supplied = true
-                        creep.memory.working = false
-                    }
-                }
-                else {
-                    CommonFunctions.filterPrint(creep.room.name, 2, "transfering")
-                    let status = creep.transfer(store_target, RESOURCE_ENERGY)
-                    if (status === ERR_NOT_IN_RANGE) {
-                        creep.moveTo(store_target, CommonFunctions.pathOptions())
-                    }
-                    this.link_creep.get(creep.room.name)!!.supplied = true
-                }
-
-            }
-            else {
-                const flag = CommonFunctions.getFlagName(flags.harvester_wait, creep.room)
-                creep.moveTo(Game.flags[flag], pathOpts)
-            }
-        }
-
-        if (this.link_creep.get(room_id)?.id === creep.id && creep.ticksToLive!! === 1) {
-            this.link_creep.delete(room_id)
         }
     }
 
-    protected createLogic(): boolean {
+    protected spawnCheck(): boolean {
         const num_harvesters = this.manager.getMyCreeps(this.role).length
         const should_spawn = num_harvesters < this.cap
-        this.skeleton.work = 5
-        this.skeleton.carry = 4
-        this.skeleton.move = 9
+        this.skeleton.work = 10
+        this.skeleton.carry = 8
+        this.skeleton.move = this.skeleton.work + this.skeleton.carry
 
         const avalable_energy = this.manager.getRoom()!!.energyAvailable
         const cost_to_create = CommonFunctions.calcEnergyCostForBody(this.skeleton)
@@ -256,7 +178,11 @@ export class Harvester extends CreepTask {
         return should_spawn
     }
 
-    static get harvestRole(): string {
-        return Harvester.harvest_role
+    protected destroyLogic(creep: CreepData): void {
+        this.supplyManager.delete(creep.origin_room, creep.id)
+    }
+
+    getRole(): string {
+        return this.role
     }
 }

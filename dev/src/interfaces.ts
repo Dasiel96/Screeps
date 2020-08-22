@@ -15,3 +15,12 @@ export interface Task {
     task_name: string,
     creep_task: CreepTask
 }
+
+export interface CreepData {
+    id: string,
+    origin_room: string,
+    cur_room: string,
+    name: string,
+    owner: string, 
+    role: string,
+}

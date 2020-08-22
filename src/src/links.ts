@@ -18,17 +18,6 @@ export class Links extends StructTasks {
         return energy_input / .97
     }
 
-    private getLinks(){
-        const links = new Array<StructureLink>()
-        const struct_type: StructureConstant[] = [STRUCTURE_LINK]
-        const link_objs = RoomManager.getInstance().getMyStructs(struct_type)
-
-        for (const l of link_objs){
-            links.push(Game.getObjectById<StructureLink>(l.id)!!)
-        }
-        return links
-    }
-
     protected runLogic(room: Room): void {
         if (this.role) {
             const links = RoomManager.getInstance().getMyStructs([STRUCTURE_LINK]) as StructureLink[]
@@ -38,9 +27,6 @@ export class Links extends StructTasks {
             }
 
             const cooldown = this.link_cool_down.get(room.name)!!
-
-
-
 
             let send_link: StructureLink | null = null
             this.amt_to_send = 100 * links.length

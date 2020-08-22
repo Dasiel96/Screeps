@@ -1,4 +1,4 @@
-export enum flags{
+export enum flag_names{
     DAS,
     harvester_wait,
     supplier_wait,
@@ -6,7 +6,10 @@ export enum flags{
     becon,
     construction,
     new_room_spawn_pos,
-    debug_flag
+    debug_flag,
+    supply_link,
+    wall,
+    ramp,
 }
 
 export enum task_names {

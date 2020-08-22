@@ -1,4 +1,4 @@
-import { flags, task_names } from "./enums"
+import { flag_names, task_names } from "./enums"
 import { Body } from "./interfaces"
 import { RoomManager } from "./roomManager"
 
@@ -54,7 +54,7 @@ export class CommonFunctions {
     static pathOptions(creepType: string = "creep"): MoveToOpts {
         let opts: MoveToOpts = {
             visualizePathStyle: { stroke: "#ffffee" },
-            reusePath: 5,
+            reusePath: 15,
             ignoreCreeps: false,
             
         }
@@ -225,9 +225,9 @@ export class CommonFunctions {
     }
 
     static setNewRoomSpawn(site: ConstructionSite, room: Room) {
-        let flag = Game.flags[flags[flags.construction]]
+        let flag = Game.flags[flag_names[flag_names.construction]]
         if (!flag) {
-            flag = Game.flags[flags[flags.construction]]
+            flag = Game.flags[flag_names[flag_names.construction]]
         }
         if (flag && site) {
             flag.memory[this.new_room_spawn] = site.id
@@ -235,7 +235,7 @@ export class CommonFunctions {
     }
 
     static getNewRoomSpawn() {
-        const flag = Game.flags[flags[flags.construction]]
+        const flag = Game.flags[flag_names[flag_names.construction]]
         let construction_site: ConstructionSite | null = null
 
         if (flag) {
@@ -249,6 +249,6 @@ export class CommonFunctions {
     }
 
     static getFlagName(flag_name: number, room: Room) {
-        return `${flags[flag_name]} ${room.name}`
+        return `${flag_names[flag_name]} ${room.name}`
     }
 }

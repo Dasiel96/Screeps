@@ -1,6 +1,9 @@
+import { RoomManager } from "../managers/roomManager"
 
 export abstract class StructTasks{
     private room_run_tracker = new Map<string, boolean>()
+
+    protected manager = RoomManager.getInstance()
 
     protected abstract runLogic(room: Room): void
 

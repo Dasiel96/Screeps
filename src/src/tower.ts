@@ -1,6 +1,4 @@
-import { CommonFunctions } from "./commonFuncs"
-import { Defender } from "./defender"
-import { task_names, flags } from "./enums"
+import { task_names, flag_names } from "./enums"
 import { StructTasks } from "./structureTasks"
 import { UnsignedNumber } from "./unsignedNum"
 import { RepairTarget } from "./repairTarget"
@@ -30,37 +28,12 @@ export class Tower extends StructTasks {
 
     private getHostileCreeps() {
         let hostile_creeps: Creep[]
-        const all_enemies = RoomManager.getInstance().getHostileCreeps()
+        const manager = RoomManager.getInstance()
 
-        const hostile_healers = new Array<Creep>()
-        const hostile_range = new Array<Creep>()
-        const hostile_attack = new Array<Creep>()
-        const hostile_other = new Array<Creep>()
-
-        for (const creep of all_enemies){
-            let is_misc_creep = false
-            for (const part of creep.body){
-                if (part.type === HEAL){
-                    hostile_healers.push(creep)
-                    is_misc_creep = true
-                    break
-                }
-                else if (part.type === RANGED_ATTACK){
-                    hostile_range.push(creep)
-                    is_misc_creep = true
-                    break
-                }
-                else if (part.type === ATTACK){
-                    hostile_attack.push(creep)
-                    is_misc_creep = true
-                    break
-                }
-            }
-
-            if (!is_misc_creep){
-                hostile_other.push(creep)
-            }
-        }
+        const hostile_healers = manager.getHostileCreeps(HEAL)
+        const hostile_range = manager.getHostileCreeps(RANGED_ATTACK)
+        const hostile_attack = manager.getHostileCreeps(ATTACK)
+        const hostile_other = manager.getHostileCreeps(MOVE)
 
         hostile_creeps = [...hostile_healers, ...hostile_range, ...hostile_attack, ...hostile_other]
 
@@ -90,7 +63,12 @@ export class Tower extends StructTasks {
 
         let nth_tower_target = 0
 
-        const becon = Game.flags[flags[flags.becon]]
+        const becon = Game.flags[flag_names[flag_names.becon]]
+
+        if (!becon) {
+            repair_fire_rate = Math.ceil(repair_fire_rate/2)
+            defense_fire_rate = Math.ceil(defense_fire_rate/2)
+        }
 
 
         for (let i = 0; i < towers.length; i++) {
@@ -111,7 +89,7 @@ export class Tower extends StructTasks {
                 this.num_of_links_near_tower.set(tower.id, num_of_links)
             }
 
-            if (cool_down_counter.get() % defense_fire_rate === 0 && Defender.underAttack) {
+            if (this.manager.isUnderAttack()) {
                 const hostile_creeps = this.getHostileCreeps()
                 const defenders = RoomManager.getInstance().getMyCreeps(this.defender_role)
                 let defense_creep: Creep | null = null
@@ -136,8 +114,6 @@ export class Tower extends StructTasks {
                 const other_structs = RoomManager.getInstance().getMyStructs([], (s: AnyStructure) => {
                     return s.structureType !== STRUCTURE_RAMPART && s.hits < s.hitsMax
                 }).sort(this.compFunc)
-
-                //CommonFunctions.filterPrint(room.name, room_id, other_structs[0].structureType)
 
                 if (!this.targets.has(tower.id)) {
                     this.targets.set(tower.id, new RepairTarget(tower.id, ""))

@@ -1,4 +1,4 @@
-import { Body } from "../interfaces"
+import { Body, CreepData } from "../interfaces"
 import { RoomManager } from "../managers/roomManager"
 
 /**
@@ -7,6 +7,8 @@ import { RoomManager } from "../managers/roomManager"
  * are not meant to be created for each creep that is currently alive.
  */
 export abstract class CreepTask{
+    private end_of_life_tick = 1
+    
     /**
      * a way to identify each creep to determine which task it should be passed into
      */
@@ -69,6 +71,7 @@ export abstract class CreepTask{
      */
     protected manager = RoomManager.getInstance()
 
+    protected abstract startLogic(creep: Creep) :void
 
     /**
      * this is where the logic of a specific task is run
@@ -79,11 +82,21 @@ export abstract class CreepTask{
     protected abstract runLogic(creep: Creep): void
 
     /**
-     * determines if a creep of a specific task should be created
+     * determines if a creep needs to be spawned
      * @returns a boolean that is true if a creep of a specific task should be spawned
      * @author Daniel Schechtman
      */
-    protected abstract createLogic(): boolean
+    protected abstract spawnCheck(): boolean
+
+
+    /**
+     * An overridable base method that is used to run code when the creep has died
+     *
+     * @param   {Creep}  creep
+     *
+     * @return  {void} 
+     */
+    protected abstract destroyLogic(creep: CreepData): void
 
     /**
      * returns the role that this task assigns to
@@ -92,6 +105,18 @@ export abstract class CreepTask{
      */
     abstract getRole(): string
 
+    onStart(creep: Creep) {
+        try {
+            this.startLogic(creep)
+        }
+        catch (_e) {
+            const err = _e as Error
+
+            console.log(err.stack)
+            console.log(err.message)
+        }
+    }
+
 
     /**
      * runs the logic for a specific task safely so if a bug in a specific task crashes the task, the script as a whole isn't stopped
@@ -99,7 +124,7 @@ export abstract class CreepTask{
      * @returns nothing
      * @author Daniel Schechtman
      */
-    run(creep: Creep): void{
+    onRun(creep: Creep): void{
         try{
             this.runLogic(creep)
         }
@@ -117,10 +142,10 @@ export abstract class CreepTask{
      * @author Daniel Schechtman
      */
 
-    create(){
+    shouldSpawn(): boolean{
         let was_created = false;
         try{
-           was_created = this.createLogic()
+           was_created = this.spawnCheck()
         }
         catch(error){
             console.log((error as Error).stack)
@@ -133,5 +158,17 @@ export abstract class CreepTask{
         }
 
         return was_created
+    }
+
+    onDestroy(creep: CreepData): void {  
+        try {
+            this.destroyLogic(creep) 
+        }
+        catch (_e) {
+            const err = _e as Error
+
+            console.log(err.stack)
+            console.log(err.message)
+        }
     }
 }

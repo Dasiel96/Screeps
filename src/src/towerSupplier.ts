@@ -1,7 +1,7 @@
 import { CreepTask } from "./creepTasks"
 import { CommonFunctions } from "./commonFuncs"
-import { Defender } from "./defender"
-import { flags, task_names } from "./enums"
+import { flag_names, task_names } from "./enums"
+import { CreepData } from "./interfaces"
 
 export class TowerSupplier extends CreepTask {
     protected role = task_names[task_names.supplier]
@@ -10,43 +10,30 @@ export class TowerSupplier extends CreepTask {
 
     private creeps_near_link = new Map<string, boolean>()
 
-    private removeTowerFromTracking() {
-        const creep_tower_tracker_copy = new Map<string, string>()
-
-        this.creep_tower_tracker.forEach((value: string, key: string) => {
-            creep_tower_tracker_copy.set(key, value)
-        })
-
-        creep_tower_tracker_copy.forEach((creep_name: string, tower_id: string) => {
-            if (!Game.creeps[creep_name]) {
-                this.creep_tower_tracker.delete(tower_id)
-            }
-        })
-    }
-
-    protected log() {
-
-    }
-
     private assignTower(creep: Creep) {
         const struct_type: StructureConstant[] = [STRUCTURE_TOWER]
         const towers = this.manager.getMyStructs(struct_type)
+        let found_tower = false
 
         for (const tower of towers) {
             if (!this.creep_tower_tracker.has(tower.id)) {
                 creep.memory.game_object_id = tower.id
                 this.creep_tower_tracker.set(tower.id, creep.name)
+                found_tower = true
                 break
             }
         }
+
+        if (!found_tower){
+            creep.suicide()
+        }
     }
 
-    getRole(): string {
-        return this.role
+    protected startLogic(creep: Creep) {
+        
     }
 
     protected runLogic(creep: Creep) {
-        this.removeTowerFromTracking()
         const state = CommonFunctions.changeWorkingState(creep)
         const source_ref = "source"
 
@@ -54,7 +41,7 @@ export class TowerSupplier extends CreepTask {
         if (state !== 1 && !creep.memory[source_ref]) {
             creep.memory[source_ref] = creep.pos.findClosestByPath(FIND_SOURCES)?.id
         }
-        else if (state == 1) {
+        else if (state === 1) {
             creep.memory[source_ref] = null
         }
 
@@ -65,7 +52,7 @@ export class TowerSupplier extends CreepTask {
             this.creep_tower_tracker.set(creep.memory.game_object_id, creep.name)
         }
 
-        const should_ignore_creep = !Defender.underAttack
+        const should_ignore_creep = this.manager.isUnderAttack()
         const path_opts = CommonFunctions.pathOptions()
 
         if (!creep.memory.working) {
@@ -128,7 +115,7 @@ export class TowerSupplier extends CreepTask {
                 }
             }
             else if (!this.creeps_near_link.get(creep.id)) {
-                const flag = CommonFunctions.getFlagName(flags.supplier_wait, creep.room)
+                const flag = CommonFunctions.getFlagName(flag_names.supplier_wait, creep.room)
                 creep.moveTo(Game.flags[flag])
             }
         }
@@ -138,7 +125,7 @@ export class TowerSupplier extends CreepTask {
         }
     }
 
-    protected createLogic(): boolean {
+    protected spawnCheck(): boolean {
         const tower_type: StructureConstant[] = [STRUCTURE_TOWER]
         const num_of_tower_suppliers = this.manager.getMyCreeps(this.role).length
         const num_of_towers = this.manager.getMyStructs(tower_type).length
@@ -173,6 +160,27 @@ export class TowerSupplier extends CreepTask {
 
 
         return should_spawn
+    }
+
+    protected destroyLogic(creep: CreepData) {
+        console.log(`${creep.name} has died`)
+        let id_to_remove = ""
+
+        for (const tower_id of this.creep_tower_tracker.keys()) {
+            const name = this.creep_tower_tracker.get(tower_id)
+            if (name === creep.name) {
+                id_to_remove = tower_id
+                break
+            }
+        }
+
+        if (id_to_remove.length > 0) {
+            this.creep_tower_tracker.delete(id_to_remove)
+        }
+    }
+
+    getRole(): string {
+        return this.role
     }
 
 }
