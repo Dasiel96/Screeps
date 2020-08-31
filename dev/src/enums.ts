@@ -22,4 +22,5 @@ export enum task_names {
     supplier,
     quickDecayRepair,
     claimer,
+    energy_distributor,
   }

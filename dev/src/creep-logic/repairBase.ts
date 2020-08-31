@@ -20,6 +20,8 @@ export class RepairBase {
 
     private num_of_creeps = 0
 
+    private on_repair_callback: () => void = () => {}
+
     /**
     * This class was made to allow for multiple repair creeps types.
     * This class accepts a list of structures and will have the creep repair structures 
@@ -121,6 +123,10 @@ export class RepairBase {
         }
     }
 
+    setOnRepairHandler(callback: () => void) {
+        this.on_repair_callback = callback
+    }
+
     /**
      * sets the struct list used be RepairBase to repair structs
      * @param {AnyStructure[]} new_struct_list list of structs to be repaired
@@ -147,7 +153,7 @@ export class RepairBase {
     }
 
     start(creep: Creep) {
-        
+        RoomManager.getInstance().updateStructureList()   
     }
 
     /**
@@ -188,6 +194,7 @@ export class RepairBase {
                 case OK: {
                     const struct_fully_repaired = struct!!.hits === struct!!.hitsMax
                     if (struct_fully_repaired) {
+                        this.on_repair_callback()
                         this.sorted_structs_from_weakest_to_strongest?.get(creep.room.name)?.pop()
                         this.assignCreepStruct(creep)
                     }

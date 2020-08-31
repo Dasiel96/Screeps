@@ -68,7 +68,7 @@ export class Upgrader extends CreepTask {
 
             }
 
-            if (this.calcBodyCost(num_of_work, num_of_carry, num_of_move)> energy_to_use) {
+            if (this.calcBodyCost(num_of_work, num_of_carry, num_of_move) > energy_to_use) {
                 num_of_work--
                 num_of_carry--
                 num_of_move--

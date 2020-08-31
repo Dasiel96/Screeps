@@ -1,9 +1,13 @@
 import { CommonFunctions } from "./commonFuncs"
 import { CreepTask } from "./creepTasks"
 import { flag_names, task_names } from "./enums"
-import { CreepActions } from "./creepAction"
 import { CreepData } from "./interfaces"
 import { TwoDemMap } from "./map"
+
+interface CreepSource {
+    creep_id: string
+    source_id: string
+}
 
 export class Harvester extends CreepTask {
 
@@ -18,6 +22,7 @@ export class Harvester extends CreepTask {
         STRUCTURE_STORAGE
     ]
 
+    private readonly sourceCreepMap = new Map<string, Array<CreepSource>>()
     private readonly supplyManager = new TwoDemMap<string, Array<StructureConstant>>()
 
     protected role = task_names[task_names.harvester]
@@ -84,7 +89,196 @@ export class Harvester extends CreepTask {
         return list_with_supply_link
     }
 
+    private IndexOf(room_name: string, creep_or_source_id: string): number | undefined {
+        let index: number | undefined = undefined
+
+        if (this.sourceCreepMap.has(room_name)) {
+            for (let i = 0; i < this.sourceCreepMap.get(room_name)!!.length; i++) {
+                const creep_source = this.sourceCreepMap.get(room_name)!![i]
+
+                if (creep_source.creep_id === creep_or_source_id || creep_source.source_id === creep_or_source_id) {
+                    index = i
+                    break
+                }
+            }
+        }
+
+        return index
+    }
+
     protected startLogic(creep: Creep) {
+
+        const sources = this.manager.getSources()
+        const supply_size = this.supplyManager.size(creep.room.name)
+
+        if (!this.sourceCreepMap.has(creep.room.name)) {
+            this.sourceCreepMap.set(creep.room.name, new Array())
+        }
+
+        for (const energy of sources) {
+            const index = this.IndexOf(creep.room.name, energy.id)
+            if (index === undefined) {
+                this.sourceCreepMap.get(creep.room.name)!!.push({
+                    creep_id: creep.id,
+                    source_id: energy.id
+                })
+                creep.memory.game_object_id = energy.id
+                break
+            }
+        }
+
+        if (this.IndexOf(creep.room.name, creep.id) === undefined) {
+            creep.suicide()
+        }
+
+        if (supply_size === 0 || supply_size > 1) {
+            this.supplyManager.set(creep.room.name, creep.id, this.production_structs)
+        }
+        else if (supply_size === 1) {
+            this.supplyManager.set(creep.room.name, creep.id, this.store_structs)
+        }
+    }
+
+    protected runLogic(creep: Creep) {
+        CommonFunctions.changeWorkingState(creep)
+
+        if (!creep.memory.working) {
+            let source = Game.getObjectById<Source>(creep.memory.game_object_id)!!
+
+            if (creep.room.name === "E48S17") {
+                source = creep.pos.findClosestByPath(FIND_SOURCES)!!
+            }
+
+            const status = creep.harvest(source)
+
+            if (status === ERR_NOT_IN_RANGE) {
+                creep.moveTo(source, CommonFunctions.pathOptions())
+            }
+        }
+        else {
+            const containers = this.manager.getMyStructs([STRUCTURE_CONTAINER]) as StructureContainer[]
+
+            if (containers.length > 0) {
+                let index = 0
+                while (index < containers.length && containers[index].store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                    index++
+                }
+
+                if (index < containers.length) {
+                    const status = creep.transfer(containers[index], RESOURCE_ENERGY)
+
+                    if (status === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(containers[index], CommonFunctions.pathOptions())
+                    }
+                }
+                else {
+                    const wait_name = `${flag_names[flag_names.harvester_wait]} ${creep.room.name}`
+                    const wait_flag = Game.flags[wait_name]
+
+                    if (wait_flag) {
+                        creep.moveTo(wait_flag, CommonFunctions.pathOptions())
+                    }
+                }
+            }
+            else {
+                const supply_size = this.supplyManager.size(creep.room.name)
+
+                if (supply_size === 1) {
+                    this.supplyManager.set(creep.room.name, creep.id, this.production_structs)
+                }
+
+
+                const struct_types = this.supplyManager.get(creep.room.name, creep.id)
+                let num = 0
+                const callback = (s: AnyStructure, debug?: any) => {
+                    let has_room_in_storage = false
+                    try {
+                        const store_struct = s as AnyStoreStructure
+                        has_room_in_storage = store_struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    }
+                    catch (e_) {
+                        const error = e_ as Error
+
+                        console.log(error.stack)
+                        console.log(error.message)
+
+                        has_room_in_storage = false
+                    }
+                    num++
+                    return has_room_in_storage
+                }
+
+                let structs = this.manager.getMyStructs(struct_types!!, callback)
+
+                if (struct_types === this.store_structs) {
+                    structs = this.removeRecieveLinks(structs, creep.room.name)
+                }
+
+                if (structs.length === 0) {
+                    structs = this.manager.getMyStructs(this.production_structs, callback)
+                }
+
+                if (structs.length > 0) {
+                    const transfer_status = creep.transfer(structs[0] as AnyStoreStructure, RESOURCE_ENERGY)
+
+                    if (transfer_status === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(structs[0], CommonFunctions.pathOptions())
+                    }
+                }
+                else {
+                    const wait_flag = Game.flags[CommonFunctions.getFlagName(flag_names.harvester_wait, creep.room)]
+                    creep.moveTo(wait_flag, CommonFunctions.pathOptions())
+                }
+            }
+        }
+    }
+
+    protected spawnCheck(): boolean {
+        const num_harvesters = this.manager.getMyCreeps(this.role).length
+        const num_of_sources = this.manager.getSources().length
+        const num_of_containers = this.manager.getMyStructs([STRUCTURE_CONTAINER]).length
+        const should_spawn = num_harvesters < this.cap
+        this.skeleton.work = 5
+        this.skeleton.carry = 4
+        this.skeleton.move = this.skeleton.work + this.skeleton.carry
+
+        const avalable_energy = this.manager.getRoom()!!.energyAvailable
+        const cost_to_create = CommonFunctions.calcEnergyCostForBody(this.skeleton)
+
+        this.num_of_creeps = num_harvesters
+        this.cap = num_of_sources
+
+        if (num_of_containers > 0) {
+            this.skeleton.carry *= 2
+            this.skeleton.move = this.skeleton.work + this.skeleton.carry
+        }
+
+
+        if (avalable_energy < cost_to_create && num_harvesters === 0) {
+            this.skeleton.work = 1
+            this.skeleton.carry = 1
+            this.skeleton.move = 2
+        }
+
+
+        return should_spawn
+    }
+
+    protected destroyLogic(creep: CreepData): void {
+        this.supplyManager.delete(creep.origin_room, creep.id)
+
+        const index = this.IndexOf(creep.origin_room, creep.id)
+        if (index !== undefined) {
+            this.sourceCreepMap.get(creep.origin_room)!!.splice(index, 1)
+        }
+    }
+
+    getRole(): string {
+        return this.role
+    }
+}
+// onStart
+/*
 
         const supply_size = this.supplyManager.size(creep.room.name)
 
@@ -94,11 +288,11 @@ export class Harvester extends CreepTask {
         else if (supply_size === 1) {
             this.supplyManager.set(creep.room.name, creep.id, this.store_structs)
         }
+*/
 
-    }
-
-    protected runLogic(creep: Creep) {
-        CommonFunctions.changeWorkingState(creep)
+// onRun
+/*
+CommonFunctions.changeWorkingState(creep)
 
         const supply_size = this.supplyManager.size(creep.room.name)
 
@@ -153,36 +347,4 @@ export class Harvester extends CreepTask {
             }
 
         }
-    }
-
-    protected spawnCheck(): boolean {
-        const num_harvesters = this.manager.getMyCreeps(this.role).length
-        const should_spawn = num_harvesters < this.cap
-        this.skeleton.work = 10
-        this.skeleton.carry = 8
-        this.skeleton.move = this.skeleton.work + this.skeleton.carry
-
-        const avalable_energy = this.manager.getRoom()!!.energyAvailable
-        const cost_to_create = CommonFunctions.calcEnergyCostForBody(this.skeleton)
-
-        this.num_of_creeps = num_harvesters
-
-
-        if (avalable_energy < cost_to_create && num_harvesters === 0) {
-            this.skeleton.work = 1
-            this.skeleton.carry = 1
-            this.skeleton.move = 2
-        }
-
-
-        return should_spawn
-    }
-
-    protected destroyLogic(creep: CreepData): void {
-        this.supplyManager.delete(creep.origin_room, creep.id)
-    }
-
-    getRole(): string {
-        return this.role
-    }
-}
+*/

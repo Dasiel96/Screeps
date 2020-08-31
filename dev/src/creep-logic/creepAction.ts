@@ -1,5 +1,6 @@
 import { task_names } from "../enums";
 import { CommonFunctions } from "../commonFuncs";
+import { RoomManager } from "../managers/roomManager";
 
 /**
 * This class holds static methods that give a more universal way of performing creep actions
@@ -15,11 +16,23 @@ export class CreepActions {
      */
     static harvest(creep: Creep): void{
         const storage = creep.room.storage
+        const containers = RoomManager.getInstance().getMyStructs([STRUCTURE_CONTAINER], (s) => {
+            let has_energy = false
 
-        if (storage !== undefined && creep.memory.role !== task_names[task_names.harvester]){
-            const status = creep.withdraw(storage, RESOURCE_ENERGY)
+            try {
+                has_energy = (s as AnyStoreStructure).store.energy > 0
+            }
+            catch(_e) {
+                has_energy = false
+            }
+
+            return has_energy
+        })
+
+        if (containers.length > 0 && creep.memory.role !== task_names[task_names.harvester]){
+            const status = creep.withdraw(containers[0], RESOURCE_ENERGY)
             if (status === ERR_NOT_IN_RANGE){
-                creep.moveTo(storage, CommonFunctions.pathOptions())
+                creep.moveTo(containers[0], CommonFunctions.pathOptions())
             }
         }
         else{

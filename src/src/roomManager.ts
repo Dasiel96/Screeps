@@ -413,6 +413,19 @@ export class RoomManager {
         return construct_sites
     }
 
+
+    updateStructureList(): void {
+        if (this.room) {
+            this.process_structures(this.room)
+        }
+    }
+
+    updateConstructionSiteList(): void {
+        if (this.room) {
+            this.process_construction_sites(this.room)
+        }
+    }
+
     /**
      * gets structures in the room that are cached in memory
      * 
@@ -432,14 +445,24 @@ export class RoomManager {
         callback: ((s: AnyStructure, debug?: any) => boolean) | undefined,
     ): Array<AnyStructure> {
         const structures = new Array<AnyStructure>()
+        const indexes_to_remove = new Array<number>()
+        const types_to_remove = new Array<StructureConstant | string>()
 
         if (room_name && struct_types.length > 0) {
             for (const type of struct_types) {
                 if (struct_map.has(room_name, type)) {
-                    for (const structure_data of struct_map.get(room_name, type)!!) {
+                    const struct_list = struct_map.get(room_name, type)!!
+                    for (const structure_data of struct_list) {
                         const a_struct_in_room = Game.getObjectById<AnyStructure>(structure_data.id)
                         if (a_struct_in_room && (callback === undefined || callback(a_struct_in_room))) {
                             structures.push(a_struct_in_room)
+                        }
+                        else if (a_struct_in_room === null) {
+                            const index = struct_list.indexOf(structure_data)
+                            indexes_to_remove.push(index)
+                            if (!types_to_remove.includes(type)) {
+                                types_to_remove.push(type)
+                            }
                         }
                     }
                 }
@@ -452,8 +475,23 @@ export class RoomManager {
                     if (struct_from_id && (callback === undefined || callback(struct_from_id))) {
                         structures.push(struct_from_id)
                     }
+                    else if (struct_from_id === null) {
+                        const index = struct_map.get(room_name, type)!!.indexOf(struct)
+                        indexes_to_remove.push(index)
+                        if (!types_to_remove.includes(type)) {
+                            types_to_remove.push(type)
+                        }
+                    }
                 }
             })
+        }
+
+        if (room_name) {
+            for (const type of types_to_remove) {
+                for (const i of indexes_to_remove) {
+                    struct_map.get(room_name, type)!!.splice(i, 1)
+                }
+            }
         }
 
         return structures

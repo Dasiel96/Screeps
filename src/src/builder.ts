@@ -51,7 +51,7 @@ export class Builder extends CreepTask {
     }
 
     protected startLogic(creep: Creep) {
-        
+        this.manager.updateConstructionSiteList()
     }
 
     protected runLogic(creep: Creep): void {
@@ -68,7 +68,11 @@ export class Builder extends CreepTask {
         }
 
         if (!creep.memory.working) {
-            CreepActions.harvest(creep)
+            const source = creep.pos.findClosestByPath(FIND_SOURCES)!!
+            const status = creep.harvest(source)
+            if (status === ERR_NOT_IN_RANGE) {
+                creep.moveTo(source, CommonFunctions.pathOptions())
+            }
         }
         else {
             const construction_site = Game.getObjectById<ConstructionSite>(creep.memory.game_object_id)

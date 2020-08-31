@@ -14,6 +14,8 @@ import { task_names } from "./enums"
 import { CreepStateWatcher } from "./creepWatch"
 import { TwoDemMap } from "./map"
 import { UnsignedNumber } from "./unsignedNum"
+import { EnergyDistributor } from "./energyDistributer"
+import { stat } from "fs"
 
 /**
  * used to sort tasks by how important they are to the
@@ -38,6 +40,10 @@ class TaskOnStackCounter {
 
     get(room_name: string, task_role: string) {
         return this.counter.get(room_name, task_role)
+    }
+
+    set(room_name: string, task_role: string, val: number) {
+        this.counter.set(room_name, task_role, val)
     }
 
     delete(room_name: string, task_role: string) {
@@ -70,7 +76,7 @@ export class CreepManager {
     private readonly creep_behaviors = new Array<TaskStackItem>()
     private readonly room_queues = new Map<string, SortableStack<TaskStackItem>>()
     private readonly creeps = new TwoDemMap<string, CreepStateWatcher>()
-    private readonly requests = new TaskOnStackCounter()
+    private readonly requests = new TwoDemMap<string, number>()
 
 
     /**
@@ -82,49 +88,55 @@ export class CreepManager {
         this.creep_behaviors.push({
             task: new Harvester(),
             id: undefined,
+            rank: new UnsignedNumber(1),
+        })
+
+        this.creep_behaviors.push({
+            task: new EnergyDistributor(),
+            id: undefined,
             rank: new UnsignedNumber(0),
         })
 
         this.creep_behaviors.push({
             task: new Defender(),
             id: undefined,
-            rank: new UnsignedNumber(1),
+            rank: new UnsignedNumber(2),
         })
 
         this.creep_behaviors.push({
             task: new TowerSupplier(),
             id: undefined,
-            rank: new UnsignedNumber(2),
+            rank: new UnsignedNumber(3),
         })
 
         this.creep_behaviors.push({
             task: new Claimer(),
             id: undefined,
-            rank: new UnsignedNumber(2),
+            rank: new UnsignedNumber(3),
         })
 
         this.creep_behaviors.push({
             task: new Builder(),
             id: undefined,
-            rank: new UnsignedNumber(3),
+            rank: new UnsignedNumber(4),
         })
 
         this.creep_behaviors.push({
             task: new DecayRepair(),
             id: undefined,
-            rank: new UnsignedNumber(3),
+            rank: new UnsignedNumber(4),
         })
 
         this.creep_behaviors.push({
             task: new PerminentStructRepair(),
             id: undefined,
-            rank: new UnsignedNumber(3),
+            rank: new UnsignedNumber(4),
         })
 
         this.creep_behaviors.push({
             task: new Upgrader(),
             id: undefined,
-            rank: new UnsignedNumber(3),
+            rank: new UnsignedNumber(4),
         })
     }
 
@@ -192,12 +204,12 @@ export class CreepManager {
 
                 this.requests.add(room_name, role, 0)
 
-                const cap = creep.task.creepCap - creep.task.existingCreeps
-                const requests_on_stack = this.requests.get(room_name, role)!!
-                const name = `${CommonFunctions.createName(creep.task.getRole())} - ${spawn.room.name}`
 
-                if (requests_on_stack < cap) {
-                    this.requests.addToTaskValue(room_name, role, 1)
+                const cap = creep.task.creepCap - creep.task.existingCreeps
+                const requests_on_stack = this.requests.get(room_name, role)
+
+                if (requests_on_stack !== null && requests_on_stack < cap) {
+                    this.requests.set(room_name, role, requests_on_stack + 1)
                     const creep_id = this.requests.get(room_name, role)!!
                     queue.push({ task: creep.task, id: creep_id, rank: creep.rank })
                 }
@@ -232,6 +244,7 @@ export class CreepManager {
 
             // creates the creep
             const status = spawn.spawnCreep(body, name, role)
+            CommonFunctions.filterPrint(spawn.room.name, 0, status)
 
             // data used to decide if the current item on the queue should be popped
             const room_name = spawn.room.name
@@ -240,7 +253,7 @@ export class CreepManager {
             const is_creation_complete = !item.task.shouldSpawn()
 
             // data used to check if a creep should be used to make a new CreepDeathWatcher
-        
+
 
             if (is_creation_complete && is_last_queued) {
                 queue.pop()

@@ -27,19 +27,24 @@ export class DecayRepair extends CreepTask {
      */
     private setStructureList(room_name: string): void {
         const structs = this.manager.getMyStructs(this.decay_struct_types, (s) => {
-            return s.hits < s.hitsMax
+            return s.hits < s.hitsMax * .6
         })
         this.base.updateStructList(room_name, structs)
     }
 
     protected startLogic(creep: Creep): void {
         this.base.start(creep)
+        this.base.setOnRepairHandler(() => {
+            if (typeof this.manager.getRoom()?.name === "string") {
+                this.setStructureList(this.manager.getRoom()!!.name)
+            }
+        })
     }
 
     protected runLogic(creep: Creep): void {
         if (!this.base.hasStructList(creep.room.name)) {
             this.setStructureList(creep.room.name)
-        }
+        }        
         this.base.run(creep)
     }
 
