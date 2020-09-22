@@ -73,11 +73,11 @@ export class Upgrader extends CreepTask {
                 num_of_carry--
                 num_of_move--
             }
-
-            this.skeleton.work = num_of_work
-            this.skeleton.move = num_of_move
-            this.skeleton.carry = num_of_carry
         }
+
+        this.skeleton.work = 16
+        this.skeleton.move = 16
+        this.skeleton.carry = 16
 
 
 

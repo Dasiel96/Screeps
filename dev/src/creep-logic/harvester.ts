@@ -110,7 +110,7 @@ export class Harvester extends CreepTask {
 
         const sources = this.manager.getSources()
         const supply_size = this.supplyManager.size(creep.room.name)
-
+        console.log("starting")
         if (!this.sourceCreepMap.has(creep.room.name)) {
             this.sourceCreepMap.set(creep.room.name, new Array())
         }
@@ -132,10 +132,12 @@ export class Harvester extends CreepTask {
         }
 
         if (supply_size === 0 || supply_size > 1) {
-            this.supplyManager.set(creep.room.name, creep.id, this.production_structs)
+            console.log("setting into production")
+            this.supplyManager.add(creep.room.name, creep.id, this.production_structs)
         }
         else if (supply_size === 1) {
-            this.supplyManager.set(creep.room.name, creep.id, this.store_structs)
+            console.log("setting into storeage")
+            this.supplyManager.add(creep.room.name, creep.id, this.store_structs)
         }
     }
 
@@ -143,11 +145,7 @@ export class Harvester extends CreepTask {
         CommonFunctions.changeWorkingState(creep)
 
         if (!creep.memory.working) {
-            let source = Game.getObjectById<Source>(creep.memory.game_object_id)!!
-
-            if (creep.room.name === "E48S17") {
-                source = creep.pos.findClosestByPath(FIND_SOURCES)!!
-            }
+            let source = creep.pos.findClosestByPath(FIND_SOURCES)!!
 
             const status = creep.harvest(source)
 
@@ -158,7 +156,7 @@ export class Harvester extends CreepTask {
         else {
             const containers = this.manager.getMyStructs([STRUCTURE_CONTAINER]) as StructureContainer[]
 
-            if (containers.length > 0) {
+            if (false) {
                 let index = 0
                 while (index < containers.length && containers[index].store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
                     index++
@@ -246,12 +244,7 @@ export class Harvester extends CreepTask {
         const cost_to_create = CommonFunctions.calcEnergyCostForBody(this.skeleton)
 
         this.num_of_creeps = num_harvesters
-        this.cap = num_of_sources
 
-        if (num_of_containers > 0) {
-            this.skeleton.carry *= 2
-            this.skeleton.move = this.skeleton.work + this.skeleton.carry
-        }
 
 
         if (avalable_energy < cost_to_create && num_harvesters === 0) {

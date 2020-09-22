@@ -1,6 +1,7 @@
 import { CreepTask } from "./creepTasks"
 import { CreepData } from "./interfaces"
 import { CommonFunctions } from "./commonFuncs"
+import { TwoDemMap } from "./map"
 
 /**
 * Object that keeps track of when the creep is first created, when it's still alive, and when it dies
@@ -10,7 +11,9 @@ import { CommonFunctions } from "./commonFuncs"
 * @param   {CreepTask}  task   used to run the creep's task
 * @author Daniel Schechtman
 */
-export class CreepStateWatcher {
+export class CreepWatcher {
+
+    private static readonly num_of_creeps_with_role = new TwoDemMap<string, number>()
 
     private readonly creep_id: string
     private readonly origin_room: string
@@ -40,7 +43,26 @@ export class CreepStateWatcher {
         this.creep_name = creep.name
         this.owner = creep.owner.username
         this.role = creep.memory.role
+
+
         task.onStart(creep)
+
+        if (!CreepWatcher.num_of_creeps_with_role.has(this.origin_room, this.role)) {
+            CreepWatcher.num_of_creeps_with_role.add(this.origin_room, this.role, 1)
+        }
+        else {
+            const num_of_roles = CreepWatcher.num_of_creeps_with_role.get(this.origin_room, this.role)!!
+            CreepWatcher.num_of_creeps_with_role.set(this.origin_room, this.role, num_of_roles + 1)
+        }
+    }
+
+    static getCreepNum(room_name: string, role: string): number {
+        let num_of_creeps = CreepWatcher.num_of_creeps_with_role.get(room_name, role)
+        if (num_of_creeps === null) {
+            num_of_creeps = 0
+        }
+
+        return num_of_creeps
     }
 
 
@@ -61,6 +83,9 @@ export class CreepStateWatcher {
             }
         }
         else {
+            const num_of_creeps = CreepWatcher.num_of_creeps_with_role.get(this.origin_room, this.role)!!
+            CreepWatcher.num_of_creeps_with_role.set(this.origin_room, this.role, num_of_creeps - 1)
+
             const data: CreepData = {
                 origin_room: this.origin_room,
                 id: this.creep_id,

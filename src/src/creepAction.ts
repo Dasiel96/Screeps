@@ -29,7 +29,7 @@ export class CreepActions {
             return has_energy
         })
 
-        if (containers.length > 0 && creep.memory.role !== task_names[task_names.harvester]){
+        if (false){
             const status = creep.withdraw(containers[0], RESOURCE_ENERGY)
             if (status === ERR_NOT_IN_RANGE){
                 creep.moveTo(containers[0], CommonFunctions.pathOptions())

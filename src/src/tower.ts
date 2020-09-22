@@ -3,6 +3,7 @@ import { StructTasks } from "./structureTasks"
 import { UnsignedNumber } from "./unsignedNum"
 import { RepairTarget } from "./repairTarget"
 import { RoomManager } from "./roomManager"
+import { CommonFunctions } from "./commonFuncs"
 
 export class Tower extends StructTasks {
 
@@ -56,18 +57,26 @@ export class Tower extends StructTasks {
     protected runLogic(room: Room): void {
         const struct_type: StructureConstant[] = [STRUCTURE_TOWER]
         const towers = RoomManager.getInstance().getMyStructs(struct_type)
+        const num_of_links = RoomManager.getInstance().getMyStructs([STRUCTURE_LINK]).length
         const room_id = 1
 
-        let repair_fire_rate = 10
-        let defense_fire_rate = 5
+        let repair_fire_rate
+        if (num_of_links === towers.length) {
+            repair_fire_rate = 5
+        }
+        else {
+            repair_fire_rate = 5
+        }
+        CommonFunctions.filterPrint(room.name, 1, repair_fire_rate, num_of_links, towers.length)
+        let defense_fire_rate = 3
 
         let nth_tower_target = 0
 
         const becon = Game.flags[flag_names[flag_names.becon]]
 
         if (!becon) {
-            repair_fire_rate = Math.ceil(repair_fire_rate/2)
-            defense_fire_rate = Math.ceil(defense_fire_rate/2)
+            repair_fire_rate = Math.ceil(repair_fire_rate / 2)
+            defense_fire_rate = Math.ceil(defense_fire_rate / 2)
         }
 
 

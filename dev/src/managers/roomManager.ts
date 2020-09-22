@@ -15,7 +15,7 @@ export class RoomManager {
 
     private room: Room | null = null
     private room_obj_refresh_counter = new Map<string, UnsignedNumber>()
-    private readonly refresh_val = 100
+    private readonly refresh_val = 1
     private readonly HOSTILE = FIND_HOSTILE_CREEPS.toString()
     private readonly username = "DasBootLoader2"
     private readonly my_room_structures = new TwoDemMap<string, Array<Structure>>()
@@ -86,7 +86,7 @@ export class RoomManager {
      */
     private storeCreep(room_name: string, role: string, creep_id: string): void {
         if (!this.room_creeps.has(room_name, role)) {
-            this.room_creeps.set(room_name, role, new Array())
+            this.room_creeps.add(room_name, role, new Array())
         }
         this.room_creeps.get(room_name, role)!!.push(creep_id)
     }

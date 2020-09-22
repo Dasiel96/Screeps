@@ -22,7 +22,9 @@ export class CommonFunctions {
     private static addBodyPartToBody(body_part_num: number, body_part_type: BodyPartConstant, body: Array<BodyPartConstant>) {
         let energy_sum = 0
         for (let i = 0; i < body_part_num; i++) {
-            body.push(body_part_type)
+            if (body.length < 50) {
+                body.push(body_part_type)
+            }
             energy_sum += CommonFunctions.energy_reqs[body_part_type]
         }
         return energy_sum
@@ -56,7 +58,7 @@ export class CommonFunctions {
             visualizePathStyle: { stroke: "#ffffee" },
             reusePath: 15,
             ignoreCreeps: false,
-            
+
         }
 
         if (creepType !== task_names[task_names.claimer]) {
@@ -155,17 +157,17 @@ export class CommonFunctions {
                             smallest_body[part]++
                             cost = this.calcEnergyCostForBody(smallest_body)
                         }
-                        
-                        if (cost > available_energy){
+
+                        if (cost > available_energy) {
                             smallest_body[part]--
                         }
-                        else if (cost === available_energy){
+                        else if (cost === available_energy) {
                             is_at_limit = true
                             break
                         }
                     }
                 }
-                if (is_at_limit){
+                if (is_at_limit) {
                     break
                 }
             }

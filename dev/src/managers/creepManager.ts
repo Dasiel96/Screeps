@@ -11,11 +11,11 @@ import { CommonFunctions } from "../commonFuncs";
 import { RoomManager } from "./roomManager";
 import { SortableStack } from "../DataStructures/stack";
 import { task_names } from "../enums";
-import { CreepStateWatcher } from "../creep-logic/creepWatch";
+import { CreepWatcher } from "../creep-logic/creepWatch";
 import { TwoDemMap } from "../DataStructures/map";
 import { UnsignedNumber } from "../unsignedNum";
 import { EnergyDistributor } from "../creep-logic/energyDistributer";
-import { stat } from "fs";
+import { stat, createReadStream } from "fs";
 
 /**
  * used to sort tasks by how important they are to the
@@ -25,6 +25,11 @@ interface TaskStackItem {
     task: CreepTask,
     id: number | undefined
     rank: UnsignedNumber
+}
+
+interface QueueTypes {
+    normal: SortableStack<TaskStackItem>,
+    prioity: SortableStack<TaskStackItem>
 }
 
 /**
@@ -74,9 +79,13 @@ export class CreepManager {
 
     private static manager: CreepManager | null = null
     private readonly creep_behaviors = new Array<TaskStackItem>()
-    private readonly room_queues = new Map<string, SortableStack<TaskStackItem>>()
-    private readonly creeps = new TwoDemMap<string, CreepStateWatcher>()
+    private readonly room_queues = new Map<string, QueueTypes>()
+    private readonly creeps = new TwoDemMap<string, CreepWatcher>()
     private readonly requests = new TwoDemMap<string, number>()
+    private readonly priority_creeps = [
+        task_names[task_names.harvester],
+        task_names[task_names.supplier],
+    ]
 
 
     /**
@@ -189,8 +198,13 @@ export class CreepManager {
      * @author Daniel Schechtman
      */
     private create(spawn: StructureSpawn): void {
+        const room_index = 1
         if (!this.room_queues.has(spawn.room.name)) {
-            this.room_queues.set(spawn.room.name, new SortableStack())
+            const item: QueueTypes = {
+                normal: new SortableStack(),
+                prioity: new SortableStack()
+            }
+            this.room_queues.set(spawn.room.name, item)
         }
 
         const queue = this.room_queues.get(spawn.room.name)!!
@@ -202,16 +216,25 @@ export class CreepManager {
                 const room_name = spawn.room.name
                 const role = creep.task.getRole()
 
-                this.requests.add(room_name, role, 0)
+                this.requests.add(room_name, role, CreepWatcher.getCreepNum(room_name, role))
 
 
-                const cap = creep.task.creepCap - creep.task.existingCreeps
+                const cap = creep.task.creepCap
                 const requests_on_stack = this.requests.get(room_name, role)
+
+                //CommonFunctions.filterPrint(room_name, room_index, requests_on_stack, cap)
 
                 if (requests_on_stack !== null && requests_on_stack < cap) {
                     this.requests.set(room_name, role, requests_on_stack + 1)
                     const creep_id = this.requests.get(room_name, role)!!
-                    queue.push({ task: creep.task, id: creep_id, rank: creep.rank })
+                    const task = { task: creep.task, id: creep_id, rank: creep.rank }
+                    if (this.priority_creeps.includes(role)) {
+                        queue.prioity.push(task)
+                    }
+                    else {
+                        queue.normal.push(task)
+                    }
+                    CommonFunctions.filterPrint(room_name, room_index, `creep id ${creep_id}`)
                 }
             }
         }
@@ -220,7 +243,7 @@ export class CreepManager {
         // makes sure the most important creeps are on top of the queue
         // so if something like a harvester dies, the colony doesn't need to wait while
         // other less important creeps are being made
-        queue.sort((arg1: TaskStackItem, arg2: TaskStackItem) => {
+        const sort_tasks = (arg1: TaskStackItem, arg2: TaskStackItem) => {
             let more_important = 0
             if (arg1.rank.get() < arg2.rank.get()) {
                 more_important = -1
@@ -232,9 +255,17 @@ export class CreepManager {
                 more_important = 1
             }
             return more_important
-        })
+        }
 
-        const item = queue.peek()
+        queue.prioity.sort(sort_tasks)
+
+        let queue_type = queue.prioity
+
+        if (queue_type.size() === 0) {
+            queue_type = queue.normal
+        }
+
+        const item = queue_type.peek()
 
         if (item) {
             // data used in creep creation
@@ -244,7 +275,7 @@ export class CreepManager {
 
             // creates the creep
             const status = spawn.spawnCreep(body, name, role)
-            CommonFunctions.filterPrint(spawn.room.name, 0, status)
+            //CommonFunctions.filterPrint(spawn.room.name, room_index, status, name)
 
             // data used to decide if the current item on the queue should be popped
             const room_name = spawn.room.name
@@ -255,13 +286,15 @@ export class CreepManager {
             // data used to check if a creep should be used to make a new CreepDeathWatcher
 
 
-            if (is_creation_complete && is_last_queued) {
-                queue.pop()
-                this.requests.delete(room_name, role_name)
+            if (status === OK) {
+                queue_type.pop()
+                const role_num = this.requests.get(room_name, role_name)
+                if (role_num) {
+                    this.requests.set(room_name, role_name, role_num - 1)
+                }
             }
-            else if (is_creation_complete) {
-                CommonFunctions.filterPrint(room_name, 1, "complete creating")
-                queue.pop()
+            else if (status === ERR_INVALID_ARGS) {
+                spawn.spawnCreep([WORK, CARRY, MOVE], name, role)
             }
         }
     }
@@ -278,7 +311,7 @@ export class CreepManager {
         if (creep && !this.creeps.has(creep.room.name, creep.id) && !creep.spawning) {
             for (const creep_behaviors of this.creep_behaviors) {
                 if (creep.memory.role === creep_behaviors.task.getRole()) {
-                    this.creeps.set(creep.room.name, creep.id, new CreepStateWatcher(creep, creep_behaviors.task))
+                    this.creeps.add(creep.room.name, creep.id, new CreepWatcher(creep, creep_behaviors.task))
                     break
                 }
             }
@@ -307,7 +340,6 @@ export class CreepManager {
 
             // runs creeps in only the current room being processed
             this.creeps.forEach(room_name, (creep, id,) => {
-
                 let is_alive = false
 
                 if (creep.curRoom === room_name) {
@@ -328,6 +360,7 @@ export class CreepManager {
 
     start() {
         const creeps_in_room = RoomManager.getInstance().getMyCreeps()
+        //CommonFunctions.filterPrint("E48S17", 1, creeps_in_room.length)
         for (const creep of creeps_in_room) {
             this.addCreepsToDeathWatchers(creep)
         }

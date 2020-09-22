@@ -36,10 +36,10 @@ export class TwoDemMap<A, B> {
 
     set(key1: string, key2: A, val: B): void {
         if (this.multiMap.has(key1)) {
-            this.multiMap.get(key1)!!.set(key2, val)
+            this.multiMap.get(key1)?.set(key2, val)
         }
         else {
-            this.add(key1, key2, val)
+            throw new Error("Cannot use set to add things to 2d maps")
         }
     }
 
